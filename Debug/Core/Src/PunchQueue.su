@@ -1,7 +1,0 @@
-../Core/Src/PunchQueue.c:17:9:PunchQueue_getNoOfItems	8	static
-../Core/Src/PunchQueue.c:30:6:PunchQueue_isFull	8	static
-../Core/Src/PunchQueue.c:42:6:PunchQueue_isEmpty	8	static
-../Core/Src/PunchQueue.c:52:6:PunchQueue_enQueue	16	static
-../Core/Src/PunchQueue.c:70:6:PunchQueue_deQueue	16	static
-../Core/Src/PunchQueue.c:95:6:PunchQueue_peek	16	static
-../Core/Src/PunchQueue.c:108:6:PunchQueue_pop	8	static
