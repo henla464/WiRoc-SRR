@@ -1,0 +1,25 @@
+# Print BMPM version
+monitor version
+# To make sure the target is not in a "strange" mode we tell BMPM to reset the
+# target using the reset pin before connecting to it.
+# monitor connect_srst enable
+# Enable target power (aka. provide power to the target side of the level shifters)
+monitor tpwr enable
+# Scan for devices using SWD interface
+monitor swdp_scan
+# Alternatively scan for devices using JTAG. (comment out the above line...)
+# monitor jtag_scan
+# Attach to the newly found target if available. (if it fails the script exits)
+attach 1
+# Success! Lets make some sound!
+shell paplay /usr/share/sounds/Yaru/stereo/device-added.oga
+# Load aka. flash the binary
+load
+# Check if the flash matches the binary
+compare-sections
+# Reset the target and disconnect
+kill
+# Write to the terminal that we succeeded
+echo "Upload success!!!"
+# Finished flashing success! Lets make some more sound!
+shell paplay /usr/share/sounds/Yaru/stereo/system-ready.oga
