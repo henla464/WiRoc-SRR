@@ -120,29 +120,22 @@ int main(void)
   HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
   HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
 
-    //if(HAL_I2C_EnableListen_IT(&hi2c2) != HAL_OK)
-  //{
+  if(HAL_I2C_EnableListen_IT(&hi2c2) != HAL_OK)
+  {
       /* Transfer error in reception process */
-//	  Error_Handler();
- // }
+	  Error_Handler();
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if (I2C_Transfer_Complete == 1)
-	  {
-		  //HAL_Delay(1);
-		  /* Remove this if possible...
-		   *  Put I2C peripheral in listen mode process */
-		  //if(HAL_I2C_EnableListen_IT(&hi2c2) != HAL_OK)
-		 // {
-			  /* Transfer error in reception process */
-		//	  Error_Handler();
-		 // }
-		  I2C_Transfer_Complete = 0;
-	  }
+	  //if (I2C_Transfer_Complete == 1)
+	  //{
+		  HAL_Delay(1);
+	//	  I2C_Transfer_Complete = 0;
+	 // }
 
 	  /*
 	  if (PunchQueue_isFull())
