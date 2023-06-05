@@ -16,6 +16,10 @@ int8_t PunchQueue_front = -1, PunchQueue_rear = -1;
 // Check if the queue is full
 uint8_t PunchQueue_getNoOfItems()
 {
+	if (PunchQueue_front == -1)
+	{
+		return 0;
+	}
 	if (PunchQueue_rear < PunchQueue_front)
 	{
 		return PUNCHQUEUE_SIZE - (PunchQueue_front - PunchQueue_rear) + 1;

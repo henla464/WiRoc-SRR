@@ -131,9 +131,18 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  // HAL_I2C_DeInit(&hi2c2);
+	  // HAL_I2C_Init(&hi2c2);
+
+
+	 HAL_I2C_EnableListen_IT(&hi2c2);
+	    {
+	        /* Transfer error in reception process */
+	  	 // Error_Handler();
+	    }
 	  //if (I2C_Transfer_Complete == 1)
 	  //{
-		  HAL_Delay(1);
+	 HAL_Delay(1);
 	//	  I2C_Transfer_Complete = 0;
 	 // }
 
