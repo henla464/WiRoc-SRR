@@ -24,10 +24,11 @@
 #define PUNCHLENGTHREGADDR 0x20	  // Read punch message
 #define ERRORLENGTHREGADDR 0x27
 // Message data registers
-#define PUNCHREGADDR 0x41	  // Read punch message
+#define PUNCHREGADDR 0x40	  // Read punch message
 #define ERRORMSGREGADDR 0x47
 
-struct Punch * I2CSlave_punchToSend;
+struct Punch *I2CSlave_punchToSendPointer;
+struct Punch I2CSlave_punchToSendBuffer;
 struct Punch I2CSlave_emptyPunch = { .payloadLength = 99, .payload = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30}, .messageStatus = { .rssi = 100, .crc = 1}};
 uint8_t I2CSlave_PunchLength = sizeof(struct Punch);
 //uint8_t I2CSlave_transmitBuffer[256];
@@ -99,7 +100,7 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 			if (I2CSlave_TransmitIndex < I2CSlave_PunchLength)
 			{
 				I2CSlave_TransmitIndex++;
-				if (HAL_I2C_Slave_Seq_Transmit_IT(hi2c, ((uint8_t *) I2CSlave_punchToSend)+I2CSlave_TransmitIndex, 1, I2C_FIRST_FRAME) != HAL_OK)
+				if (HAL_I2C_Slave_Seq_Transmit_IT(hi2c, ((uint8_t *) I2CSlave_punchToSendPointer)+I2CSlave_TransmitIndex, 1, I2C_FIRST_FRAME) != HAL_OK)
 				{
 					Error_Handler();
 				}
@@ -107,7 +108,7 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 			if (I2CSlave_TransmitIndex + 1 == I2CSlave_PunchLength)
 			{
 				// Last byte sent
-				if (&I2CSlave_emptyPunch != I2CSlave_punchToSend)
+				if (&I2CSlave_emptyPunch != I2CSlave_punchToSendPointer)
 				{
 					PunchQueue_pop(); // in theory another punch could have been added to the queue and we now pops the wrong one...make a safe pop version
 				}
@@ -257,14 +258,15 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 			{
 				if (PunchQueue_getNoOfItems() > 0)
 				{
-					PunchQueue_peek(I2CSlave_punchToSend);
+					PunchQueue_peek(&I2CSlave_punchToSendBuffer);
+					I2CSlave_punchToSendPointer = &I2CSlave_punchToSendBuffer;
 				} else {
-					I2CSlave_punchToSend = &I2CSlave_emptyPunch;
+					I2CSlave_punchToSendPointer = &I2CSlave_emptyPunch;
 				}
 				if (I2CSlave_TransmitIndex < I2CSlave_PunchLength)
 				{
 
-					if (HAL_I2C_Slave_Seq_Transmit_IT(hi2c, ((uint8_t *) I2CSlave_punchToSend) + I2CSlave_TransmitIndex, 1, I2C_FIRST_FRAME) != HAL_OK)
+					if (HAL_I2C_Slave_Seq_Transmit_IT(hi2c, ((uint8_t *) I2CSlave_punchToSendPointer) + I2CSlave_TransmitIndex, 1, I2C_FIRST_FRAME) != HAL_OK)
 					{
 						Error_Handler();
 					}

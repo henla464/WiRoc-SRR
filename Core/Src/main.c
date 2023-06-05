@@ -133,7 +133,7 @@ int main(void)
   {
 	  // HAL_I2C_DeInit(&hi2c2);
 	  // HAL_I2C_Init(&hi2c2);
-
+	  // You can try to reset the peripheral to see if it frees up. You can reset the peripheral with the I2C_CR1_SWRST bit.
 
 	 HAL_I2C_EnableListen_IT(&hi2c2);
 	    {

@@ -22,13 +22,8 @@ print(errcnt)
 
 
 # status
-status = bus.read_byte_data(addr, 0x10)
+status = bus.read_byte_data(addr, 0x04)
 print(status)
-
-
-# punch length
-plen = bus.read_byte_data(addr, 0x20)
-print(plen)
 
 
 
@@ -38,11 +33,23 @@ bus.write_byte_data(addr, 0x05, 32)
 # write serialno
 bus.write_i2c_block_data(addr, 0x02, [0x6,0x7,0x8,0x9])
 
+# punch length
+plen = bus.read_byte_data(addr, 0x20)
+print(plen)
+
 # read punch
-if plen > 0 and (status & 0x01) > 0:
-	data = bus.read_i2c_block_data(addr, 0x31, plen)
-	print(data)
-	
+index = 0;
+if plen > 0: # and (status & 0x01) > 0:
+	while index < plen:
+		bus.write_byte_data(addr, 0x05, index)
+		remaining = plen - index
+		noToRead = remaining
+		if remaining > 31:
+			noToRead = 31
+		data = bus.read_i2c_block_data(addr, 0x40, noToRead)
+		index += noToRead
+		print(data)
+
 # read error
 
 # errormsg length
