@@ -97,6 +97,7 @@ struct PortAndPin {
 	GPIO_TypeDef *GPIOx;
 	uint16_t GPIO_Pin;
 	IRQn_Type InterruptIRQ;
+	uint8_t Channel;
 };
 
 uint8_t CC2500_WriteByteSPI(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t writevalue);

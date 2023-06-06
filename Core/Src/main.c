@@ -26,6 +26,7 @@
 #include "PunchQueue.h"
 #include "I2CSlave.h"
 #include <string.h>
+#include "ErrorLog.h"
 
 
 //#define COUNTOF(__BUFFER__)   (sizeof(__BUFFER__) / sizeof(*(__BUFFER__)))
@@ -62,14 +63,15 @@ UART_HandleTypeDef huart2;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_USART2_UART_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_SPI1_Init(void);
-static void MX_USART2_UART_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
 static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPin ,uint8_t channel);
 static uint8_t GetPunchReplyIncludingSpaceForCommandByte(struct Punch punch, uint8_t * punchReply);
 static void AckSentEnableRX(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPin);
+static bool EnableI2CListen();
 
 /* USER CODE END PFP */
 
@@ -85,7 +87,6 @@ static void AckSentEnableRX(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSe
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	//__IO uint32_t I2C_Transfer_Complete = 0;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -94,25 +95,21 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
   /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
-
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_USART2_UART_Init();
   MX_I2C2_Init();
   MX_SPI1_Init();
-  MX_USART2_UART_Init();
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
-
   HAL_Delay(1);
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_9, GPIO_PIN_SET);
@@ -120,31 +117,38 @@ int main(void)
   HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
   HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
 
-  if(HAL_I2C_EnableListen_IT(&hi2c2) != HAL_OK)
+  if (!EnableI2CListen())
   {
-      /* Transfer error in reception process */
-	  Error_Handler();
+	  // Tried multiple times
+	  HAL_I2C_DeInit(&hi2c2);
+	  HAL_I2C_Init(&hi2c2);
+	  if (!EnableI2CListen())
+	  {
+		  // reset!
+	  }
   }
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  // HAL_I2C_DeInit(&hi2c2);
-	  // HAL_I2C_Init(&hi2c2);
-	  // You can try to reset the peripheral to see if it frees up. You can reset the peripheral with the I2C_CR1_SWRST bit.
 
-	 HAL_I2C_EnableListen_IT(&hi2c2);
-	    {
-	        /* Transfer error in reception process */
-	  	 // Error_Handler();
-	    }
-	  //if (I2C_Transfer_Complete == 1)
-	  //{
-	 HAL_Delay(1);
-	//	  I2C_Transfer_Complete = 0;
-	 // }
+	  // You can try to reset the peripheral to see if it frees up. You can reset the peripheral with the I2C_CR1_SWRST bit.
+	  if (hi2c2.State == HAL_I2C_STATE_READY) {
+		  if (!EnableI2CListen())
+		  {
+			  HAL_I2C_DeInit(&hi2c2);
+			  HAL_I2C_Init(&hi2c2);
+			  if (!EnableI2CListen())
+			  {
+				  // reset!
+			  }
+		  }
+	  }
+
+	  HAL_Delay(1);
 
 	  /*
 	  if (PunchQueue_isFull())
@@ -311,10 +315,9 @@ static void MX_SPI1_Init(void)
   chipSelectPortPin.GPIOx = GPIOA;
   chipSelectPortPin.GPIO_Pin = GPIO_PIN_8;
   chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
+  chipSelectPortPin.Channel = REDCHANNEL;
 
-  uint8_t redChannel;
-  redChannel = 146;
-  InitCC2500(&hspi1, &chipSelectPortPin, redChannel);
+  InitCC2500(&hspi1, &chipSelectPortPin, REDCHANNEL);
   /* USER CODE END SPI1_Init 2 */
 
 }
@@ -358,10 +361,10 @@ static void MX_SPI2_Init(void)
   chipSelectPortPin.GPIOx = GPIOB;
   chipSelectPortPin.GPIO_Pin = GPIO_PIN_9;
   chipSelectPortPin.InterruptIRQ = EXTI0_1_IRQn;
+  chipSelectPortPin.Channel = BLUECHANNEL;
 
-  uint8_t blueChannel;
-  blueChannel = 186;
-  InitCC2500(&hspi2, &chipSelectPortPin, blueChannel);
+
+  InitCC2500(&hspi2, &chipSelectPortPin, BLUECHANNEL);
   /* USER CODE END SPI2_Init 2 */
 
 }
@@ -397,9 +400,9 @@ static void MX_USART2_UART_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN USART2_Init 2 */
-  char msg[] = "UART Started 2";
+  char msg[] = "UART2 Started\r\n";
   HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
-
+  ErrorLog_SetUARTInitialized(&huart2, true);
   /* USER CODE END USART2_Init 2 */
 
 }
@@ -461,6 +464,34 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+static bool EnableI2CListen()
+{
+	if (hi2c2.State == HAL_I2C_STATE_LISTEN)
+	{
+		return true;
+	}
+	uint16_t noOfTries = 0;
+	do
+	{
+		HAL_Delay(1);
+		uint8_t retStatus;
+		if((retStatus = HAL_I2C_EnableListen_IT(&hi2c2)) != HAL_OK)
+		{
+			char msg[60];
+			sprintf(msg, "HAL_I2C_EnableListen_IT returned: %u hi2c2->State: %u\r\n", retStatus, hi2c2.State);
+			ErrorLog_log("EnableI2CListen", msg);
+
+			noOfTries++;
+			if (noOfTries == 100)
+			{
+				return false;
+			}
+		}
+	} while (hi2c2.State != HAL_I2C_STATE_LISTEN);
+	return true;
+}
+
 
 static void Configure_GDO_INT_1_AsRisingInterrupt()
 {
@@ -548,7 +579,10 @@ static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectP
 	uint8_t readlength;
 	readlength = CC2500_GetPacketLength(phspi, chipSelectPortPin);
 	if ( readlength != writelength ) {
-		Error_Handler();
+		char msg[100];
+		sprintf(msg, "readLength: %u writeLength: %u\r\n", readlength, writelength);
+		ErrorLog_log("InitCC2500", msg);
+		// reset
 	}
 
 
@@ -622,7 +656,10 @@ static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectP
 	{
 		noOfTries++;
 		if (noOfTries > 200) {
-			Error_Handler();
+			char msg[100];
+			sprintf(msg, "Carrier sense not reached, pktstatus: %u \r\n", pktstatus);
+			ErrorLog_log("InitCC2500", msg);
+			// reset
 		}
 	}
 
@@ -696,16 +733,17 @@ static void ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 	{
 		CC2500_ReadRXFifo(phspi, chipSelectPortPin, punch.payload, punch.payloadLength);
 		CC2500_ReadRXFifo(phspi, chipSelectPortPin, (uint8_t *)&punch.messageStatus, 2);
+		punch.channel = chipSelectPortPin->Channel;
 		// todo check CRC and dont reply if wrong
 		PunchQueue_enQueue(&punch);
 	} else {
+		ErrorLog_log("ReadMessage", "Received to few bytes so will flush");
 		CC2500_ExitRXTX(phspi, chipSelectPortPin);
 		CC2500_FlushRXFIFO(phspi, chipSelectPortPin);
 		CC2500_EnableRX(phspi, chipSelectPortPin);
 		return;
 	}
 
-	// Wait 337 us (SRR-OEM)
 	CC2500_ExitRXTX(phspi, chipSelectPortPin);
 	do {
 	} while (!CC2500_GetIsReadyAndIdle(phspi, chipSelectPortPin));  // while not chip ready and IDLE
@@ -713,10 +751,9 @@ static void ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 
 
 	uint8_t replyLength = GetPunchReplyIncludingSpaceForCommandByte(punch, PunchReply);
-	CC2500_WriteTXFifo(phspi, chipSelectPortPin, PunchReply, replyLength);  // we are a bit slow to get writing
+	CC2500_WriteTXFifo(phspi, chipSelectPortPin, PunchReply, replyLength);
 
 	// Disable interrupt, change GDO0 to PA_PD
-
 	if (chipSelectPortPin->GPIO_Pin == GPIO_PIN_8) {
 		Configure_GDO_INT_1_AsGPIO();
 	} else {
@@ -772,6 +809,7 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
     	chipSelectPortPin.GPIOx = GPIOA;
     	chipSelectPortPin.GPIO_Pin = GPIO_PIN_8;
     	chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
+    	chipSelectPortPin.Channel = REDCHANNEL;
 
    		ReadMessage(&hspi1, &chipSelectPortPin);
     }
@@ -781,6 +819,7 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
     	chipSelectPortPin.GPIOx = GPIOB;
     	chipSelectPortPin.GPIO_Pin = GPIO_PIN_9;
     	chipSelectPortPin.InterruptIRQ = EXTI0_1_IRQn;
+    	chipSelectPortPin.Channel = BLUECHANNEL;
 
 		ReadMessage(&hspi2, &chipSelectPortPin);
 	}
@@ -819,16 +858,16 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
 	/* User can add his own implementation to report the HAL error return state */
 	__disable_irq();
-	// set a pin to high?
-	char msg[] = "Error Handler";
-	HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
-	while (1)
-	{
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_SET);
-		HAL_Delay(1000);
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
-		HAL_Delay(1000);
-	}
+	char msg[100];
+	sprintf(msg, "FILE: %s LINE: %u\r\n", file, line);
+	ErrorLog_log("_Error_Hanler", msg);
+
+	// reset ?
+
+	//HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_SET);
+	//HAL_Delay(1000);
+	//HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
+	//HAL_Delay(1000);
   /* USER CODE END Error_Handler_Debug */
 }
 

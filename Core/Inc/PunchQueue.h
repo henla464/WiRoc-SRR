@@ -26,6 +26,7 @@ struct Punch {
   uint8_t payloadLength;
   uint8_t payload[PUNCH_LENGTH];
   struct MessageStatus messageStatus;
+  uint8_t channel;
 };
 
 extern struct Punch PunchQueue_items[PUNCHQUEUE_SIZE];
