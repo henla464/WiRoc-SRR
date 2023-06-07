@@ -103,7 +103,7 @@ struct PortAndPin {
 uint8_t CC2500_WriteByteSPI(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t writevalue);
 uint8_t CC2500_ReadRegister(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t registerAddress);
 uint8_t CC2500_WriteRegister(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t registerAddress, uint8_t data);
-void CC2500_WriteReadBytesSPI(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t* writeValues, uint8_t* readValues, uint8_t length);
+bool CC2500_WriteReadBytesSPI(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t* writeValues, uint8_t* readValues, uint8_t length);
 
 void CC2500_Reset(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin);
 void CC2500_SetPacketLength(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t length);
@@ -160,7 +160,7 @@ uint8_t CC2500_GetRXBytesOverflowAndNumberOfBytes(SPI_HandleTypeDef* hspi, struc
 uint8_t CC2500_GetNoOfRXBytes(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin);
 uint8_t CC2500_GetNoOfTXBytes(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin);
 uint8_t CC2500_GetRSSI(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin);
-void CC2500_ReadRXFifo(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t* readValues, uint8_t length);
-void CC2500_WriteTXFifo(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t* txBytes, uint8_t length);
+bool CC2500_ReadRXFifo(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t* readValues, uint8_t length);
+bool CC2500_WriteTXFifo(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t* txBytes, uint8_t length);
 
 #endif /* SRC_CC2500_H_ */

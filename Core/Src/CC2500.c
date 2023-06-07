@@ -1,13 +1,18 @@
 #include "CC2500.h"
 #include "main.h"
+#include "string.h"
+#include "ErrorLog.h"
 
 uint8_t CC2500_WriteByteSPI(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t writevalue)
 {
 	uint8_t readvalue = 0;
-
+	uint8_t status = 0;
 	HAL_GPIO_WritePin(chipSelectPin->GPIOx, chipSelectPin->GPIO_Pin, GPIO_PIN_RESET);
-	if ( HAL_SPI_TransmitReceive(hspi, (uint8_t*) &writevalue, (uint8_t*) &readvalue, 1, 5 ) != HAL_OK)
+	if ( (status = HAL_SPI_TransmitReceive(hspi, (uint8_t*) &writevalue, (uint8_t*) &readvalue, 1, 5 )) != HAL_OK)
 	{
+		char msg[50];
+		sprintf(msg, "HAL_SPI_TransmitReceive returned: %u \r\n", status);
+		ErrorLog_log("CC2500_WriteByteSPI", msg);
 		Error_Handler();
 	}
 	while( hspi->State == HAL_SPI_STATE_BUSY );
@@ -19,10 +24,14 @@ uint8_t CC2500_ReadRegister(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSel
 {
 	uint8_t readValues[2] = {0};
 	uint8_t writeValues[2] = { registerAddress | 0xC0, 0xDB};
+	uint8_t status = 0;
 
 	HAL_GPIO_WritePin(chipSelectPin->GPIOx, chipSelectPin->GPIO_Pin, GPIO_PIN_RESET);
-	if ( HAL_SPI_TransmitReceive(hspi, writeValues, readValues, 2, 5 ) != HAL_OK)
+	if ( (status = HAL_SPI_TransmitReceive(hspi, writeValues, readValues, 2, 5 )) != HAL_OK)
 	{
+		char msg[50];
+		sprintf(msg, "HAL_SPI_TransmitReceive returned: %u \r\n", status);
+		ErrorLog_log("CC2500_ReadRegister", msg);
 		Error_Handler();
 	}
 	while( hspi->State == HAL_SPI_STATE_BUSY );
@@ -35,10 +44,14 @@ uint8_t CC2500_WriteRegister(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSe
 {
 	uint8_t readValues[2] = {0};
 	uint8_t writeValues[2] = { registerAddress | 0x40, data};
+	uint8_t status = 0;
 
 	HAL_GPIO_WritePin(chipSelectPin->GPIOx, chipSelectPin->GPIO_Pin, GPIO_PIN_RESET);
-	if ( HAL_SPI_TransmitReceive(hspi, writeValues, readValues, 2, 5 ) != HAL_OK)
+	if ( (status = HAL_SPI_TransmitReceive(hspi, writeValues, readValues, 2, 5 )) != HAL_OK)
 	{
+		char msg[50];
+		sprintf(msg, "HAL_SPI_TransmitReceive returned: %u \r\n", status);
+		ErrorLog_log("CC2500_WriteRegister", msg);
 		Error_Handler();
 	}
 	while( hspi->State == HAL_SPI_STATE_BUSY );
@@ -49,15 +62,20 @@ uint8_t CC2500_WriteRegister(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSe
 
 
 
-void CC2500_WriteReadBytesSPI(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t* writeValues, uint8_t* readValues, uint8_t length)
+bool CC2500_WriteReadBytesSPI(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t* writeValues, uint8_t* readValues, uint8_t length)
 {
+	uint8_t status = 0;
 	HAL_GPIO_WritePin(chipSelectPin->GPIOx, chipSelectPin->GPIO_Pin, GPIO_PIN_RESET);
-	if ( HAL_SPI_TransmitReceive(hspi, writeValues, readValues, length, 100 ) != HAL_OK)
+	if ( (status = HAL_SPI_TransmitReceive(hspi, writeValues, readValues, length, 100 )) != HAL_OK)
 	{
-		Error_Handler();
+		char msg[50];
+		sprintf(msg, "HAL_SPI_TransmitReceive returned: %u \r\n", status);
+		ErrorLog_log("CC2500_WriteReadBytesSPI", msg);
+		return false;
 	}
 	while( hspi->State == HAL_SPI_STATE_BUSY );
 	HAL_GPIO_WritePin(chipSelectPin->GPIOx, chipSelectPin->GPIO_Pin, GPIO_PIN_SET);
+	return true;
 }
 
 
@@ -76,7 +94,6 @@ uint8_t CC2500_GetGDO0OutputPinConfiguration(SPI_HandleTypeDef* hspi, struct Por
 	uint8_t status = CC2500_ReadRegister(hspi,  chipSelectPin, 0x02);
 	return status;
 }
-
 
 void CC2500_SetPacketLength(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t length)
 {
@@ -138,12 +155,10 @@ void CC2500_SetModemConfiguration3(SPI_HandleTypeDef* hspi, struct PortAndPin * 
 	CC2500_WriteRegister(hspi, chipSelectPin, 0x11, data);
 }
 
-
 void CC2500_SetModemConfiguration2(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t data)
 {
 	CC2500_WriteRegister(hspi, chipSelectPin, 0x12, data);
 }
-
 
 void CC2500_SetModemConfiguration1(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t data)
 {
@@ -351,19 +366,27 @@ uint8_t CC2500_GetNoOfTXBytes(SPI_HandleTypeDef* hspi, struct PortAndPin * chipS
 
 uint8_t writeBuffer[100] = {0};
 uint8_t readBuffer[100] = {0};
-void CC2500_ReadRXFifo(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t* readValues, uint8_t length)
+bool CC2500_ReadRXFifo(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t* readValues, uint8_t length)
 {
 	writeBuffer[0] = 0xFF; // burst read RX FIFO
-	CC2500_WriteReadBytesSPI(hspi, chipSelectPin, (uint8_t *) writeBuffer, readValues, length + 1);
+	if (!CC2500_WriteReadBytesSPI(hspi, chipSelectPin, (uint8_t *) writeBuffer, readValues, length + 1))
+	{
+		return false;
+	}
 	for(uint8_t i=0; i < length; i++)
 	{
 		readValues[i] = readValues[i+1];
 	}
 	readValues[length] = 0x00;
+	return true;
 }
 
-void CC2500_WriteTXFifo(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t* txBytes, uint8_t length)
+bool CC2500_WriteTXFifo(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t* txBytes, uint8_t length)
 {
 	txBytes[0] = 0x7F;
-	CC2500_WriteReadBytesSPI(hspi, chipSelectPin, txBytes, readBuffer, length+1);
+	if (!CC2500_WriteReadBytesSPI(hspi, chipSelectPin, txBytes, readBuffer, length+1))
+	{
+		return false;
+	}
+	return true;
 }

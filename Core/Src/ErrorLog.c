@@ -5,7 +5,6 @@
  *      Author: henla464
  */
 #include "ErrorLog.h"
-#include "ErrorLog.h"
 
 uint16_t ErrorLog_errorCount = 0;
 char ErrorLog_message[256];

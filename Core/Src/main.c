@@ -727,17 +727,29 @@ static void ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 	} while (noOfRxBytes1 != noOfRxBytes2);
 
 	// read the length byte
-	CC2500_ReadRXFifo(phspi, chipSelectPortPin, &punch.payloadLength, 1);
+	if (!CC2500_ReadRXFifo(phspi, chipSelectPortPin, &punch.payloadLength, 1))
+	{
+		ErrorLog_log("ReadMessage", "CC2500_ReadRXFifo returned false (1)");
+		return;
+	}
 
 	if (noOfRxBytes2 >= punch.payloadLength + 3)
 	{
-		CC2500_ReadRXFifo(phspi, chipSelectPortPin, punch.payload, punch.payloadLength);
-		CC2500_ReadRXFifo(phspi, chipSelectPortPin, (uint8_t *)&punch.messageStatus, 2);
+		if (!CC2500_ReadRXFifo(phspi, chipSelectPortPin, punch.payload, punch.payloadLength))
+		{
+			ErrorLog_log("ReadMessage", "CC2500_ReadRXFifo returned false (2)");
+			return;
+		}
+		if (!CC2500_ReadRXFifo(phspi, chipSelectPortPin, (uint8_t *)&punch.messageStatus, 2))
+		{
+			ErrorLog_log("ReadMessage", "CC2500_ReadRXFifo returned false (3)");
+			return;
+		}
 		punch.channel = chipSelectPortPin->Channel;
 		// todo check CRC and dont reply if wrong
-		PunchQueue_enQueue(&punch);
+		PunchQueue_enQueue(&incomingPunchQueue, &punch);
 	} else {
-		ErrorLog_log("ReadMessage", "Received to few bytes so will flush");
+		ErrorLog_log("ReadMessage", "Received too few bytes so will flush");
 		CC2500_ExitRXTX(phspi, chipSelectPortPin);
 		CC2500_FlushRXFIFO(phspi, chipSelectPortPin);
 		CC2500_EnableRX(phspi, chipSelectPortPin);

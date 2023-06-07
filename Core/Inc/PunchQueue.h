@@ -29,15 +29,23 @@ struct Punch {
   uint8_t channel;
 };
 
-extern struct Punch PunchQueue_items[PUNCHQUEUE_SIZE];
+struct PunchQueue {
+	struct Punch PunchQueue_items[PUNCHQUEUE_SIZE];
+	int8_t PunchQueue_front;
+	int8_t PunchQueue_rear;
+};
 
+
+extern struct PunchQueue incomingPunchQueue;
+extern struct PunchQueue outgoingPunchQueue;
 
 uint8_t PunchQueue_getNoOfItems();
-bool PunchQueue_isFull();
-bool PunchQueue_isEmpty();
-bool PunchQueue_enQueue(struct Punch * punch);
-bool PunchQueue_deQueue(struct Punch * punch);
-bool PunchQueue_peek(struct Punch * punch);
-bool PunchQueue_pop();
+bool PunchQueue_isFull(struct PunchQueue * queue);
+bool PunchQueue_isEmpty(struct PunchQueue * queue);
+bool PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch);
+bool PunchQueue_deQueue(struct PunchQueue * queue, struct Punch * punch);
+bool PunchQueue_peek(struct PunchQueue * queue, struct Punch * punch, struct Punch ** punchID);
+bool PunchQueue_pop(struct PunchQueue * queue);
+bool PunchQueue_popSafe(struct PunchQueue * queue, struct Punch * punchID);
 
 #endif /* INC_PUNCHQUEUE_H_ */

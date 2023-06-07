@@ -52,8 +52,6 @@ extern "C" {
 #define Error_Handler1(unused) _Error_Handler( char * file, int line )
 void _Error_Handler(char *, int);
 
-#define REDCHANNEL 146
-#define BLUECHANNEL 186
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
@@ -65,7 +63,8 @@ void Error_Handler(void);
 
 /* Private defines -----------------------------------------------------------*/
 /* USER CODE BEGIN Private defines */
-
+#define REDCHANNEL 146
+#define BLUECHANNEL 186
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus
