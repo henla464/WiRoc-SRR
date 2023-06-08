@@ -29,6 +29,7 @@ void ErrorLog_log(char* functionName, char* message)
 	if (ErrorLog_UARTInitialized && ErrorLog_printErrorsToUARTEnabled)
 	{
 		HAL_UART_Transmit(ErrorLog_huart, (uint8_t *)ErrorLog_message, strlen(ErrorLog_message), HAL_MAX_DELAY);
+		HAL_UART_Transmit(ErrorLog_huart, (uint8_t *)"\r\n", 2, HAL_MAX_DELAY);
 	}
 }
 

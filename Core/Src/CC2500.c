@@ -11,7 +11,7 @@ uint8_t CC2500_WriteByteSPI(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSel
 	if ( (status = HAL_SPI_TransmitReceive(hspi, (uint8_t*) &writevalue, (uint8_t*) &readvalue, 1, 5 )) != HAL_OK)
 	{
 		char msg[50];
-		sprintf(msg, "HAL_SPI_TransmitReceive returned: %u \r\n", status);
+		sprintf(msg, "ret: %u", status);
 		ErrorLog_log("CC2500_WriteByteSPI", msg);
 		Error_Handler();
 	}
@@ -30,7 +30,7 @@ uint8_t CC2500_ReadRegister(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSel
 	if ( (status = HAL_SPI_TransmitReceive(hspi, writeValues, readValues, 2, 5 )) != HAL_OK)
 	{
 		char msg[50];
-		sprintf(msg, "HAL_SPI_TransmitReceive returned: %u \r\n", status);
+		sprintf(msg, "ret: %u", status);
 		ErrorLog_log("CC2500_ReadRegister", msg);
 		Error_Handler();
 	}
@@ -50,7 +50,7 @@ uint8_t CC2500_WriteRegister(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSe
 	if ( (status = HAL_SPI_TransmitReceive(hspi, writeValues, readValues, 2, 5 )) != HAL_OK)
 	{
 		char msg[50];
-		sprintf(msg, "HAL_SPI_TransmitReceive returned: %u \r\n", status);
+		sprintf(msg, "ret: %u", status);
 		ErrorLog_log("CC2500_WriteRegister", msg);
 		Error_Handler();
 	}
@@ -69,7 +69,7 @@ bool CC2500_WriteReadBytesSPI(SPI_HandleTypeDef* hspi, struct PortAndPin * chipS
 	if ( (status = HAL_SPI_TransmitReceive(hspi, writeValues, readValues, length, 100 )) != HAL_OK)
 	{
 		char msg[50];
-		sprintf(msg, "HAL_SPI_TransmitReceive returned: %u \r\n", status);
+		sprintf(msg, "ret: %u", status);
 		ErrorLog_log("CC2500_WriteReadBytesSPI", msg);
 		return false;
 	}

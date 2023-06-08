@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include "stm32g0xx_hal.h"
 
+extern bool ErrorLog_printErrorsToUARTEnabled;
 void ErrorLog_log(char* functionName, char* message);
 uint16_t ErrorLog_getErrorCount();
 char* ErrorLog_getMessage();

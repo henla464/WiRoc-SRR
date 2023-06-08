@@ -37,7 +37,6 @@ struct PunchQueue {
 
 
 extern struct PunchQueue incomingPunchQueue;
-extern struct PunchQueue outgoingPunchQueue;
 
 uint8_t PunchQueue_getNoOfItems();
 bool PunchQueue_isFull(struct PunchQueue * queue);

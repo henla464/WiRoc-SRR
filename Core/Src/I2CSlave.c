@@ -7,6 +7,7 @@
 #include "I2CSlave.h"
 #include "main.h"
 #include "string.h"
+#include "ErrorLog.h"
 
 #define I2CSLAVE_FIRMWAREVERSION 1
 #define I2CSLAVE_REDCHANNELBIT  0b00000001
@@ -14,7 +15,7 @@
 
 /*## REGISTER ADDRESSES ##*/
 #define FIRMWAREVERSIONREGADDR 0x00   // Version of the firware
-#define HARDWAREFEATURESREGADDR 0x01  // Hardware features available: bit 0: RED Channel, bit 1: BLUE Channel
+#define HARDWAREFEATURESREGADDR 0x01  // Hardware features available: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART
 #define SERIALNOREGADDR 0x02  // Serialno of the dongle
 #define ERRORCOUNTREGADDR 0x03  // Serialno of the dongle
 #define STATUSREGADDR 0x04	  // Indicates what messages there is to fetch. bit 7: Error message, bit 0: Punch message
@@ -31,11 +32,11 @@ struct Punch *I2CSlave_punchToSendPointer;
 struct Punch *I2CSlave_punchToSendID;
 struct Punch I2CSlave_punchToSendBuffer;
 
-struct Punch I2CSlave_emptyPunch = { .payloadLength = 99, .payload = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30}, .messageStatus = { .rssi = 100, .crc = 1}};
+//struct Punch I2CSlave_emptyPunch = { .payloadLength = 99, .payload = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30}, .messageStatus = { .rssi = 100, .crc = 1}};
 uint8_t I2CSlave_PunchLength = sizeof(struct Punch);
 uint8_t I2CSlave_receivedRegister[2];
 uint8_t I2CSlave_serialNumber[4] = {5, 6, 7, 8};
-char I2CSlave_errorMessage[] = "This is an error message!";
+uint16_t I2CSlave_LastErrorCount = 0;
 uint8_t I2CSlave_TransmitIndex = 0;
 uint8_t I2CSlave_ReceiveIndex = 0;
 
@@ -61,6 +62,9 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 				I2CSlave_TransmitIndex++;
 				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &I2CSlave_serialNumber[I2CSlave_TransmitIndex], 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
+					char msg[100];
+					sprintf(msg, "SERIALNOREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_SlaveTxCpltCallback", msg);
 					/* enable listen again? log error and return? */
 					Error_Handler();
 				}
@@ -72,6 +76,9 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 			uint8_t errorCount = 0;
 			if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &errorCount, 1, I2C_FIRST_FRAME)) != HAL_OK)
 			{
+				char msg[100];
+				sprintf(msg, "ERRORCOUNTREGADDR:ret: %u", status);
+				ErrorLog_log("HAL_I2C_SlaveTxCpltCallback", msg);
 				/* enable listen again? log error and return? */
 				Error_Handler();
 			}
@@ -101,16 +108,30 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 		{
 			if (I2CSlave_TransmitIndex < I2CSlave_PunchLength)
 			{
-				I2CSlave_TransmitIndex++;
-				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, ((uint8_t *) I2CSlave_punchToSendPointer)+I2CSlave_TransmitIndex, 1, I2C_FIRST_FRAME)) != HAL_OK)
-				{
-					Error_Handler();
+				if (I2CSlave_punchToSendPointer == NULL) {
+					uint8_t zeroByte = 0;
+					if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &zeroByte, 1, I2C_FIRST_FRAME)) != HAL_OK)
+					{
+						char msg[30];
+						sprintf(msg, "PUNCHREGADDR:1ret: %u", status);
+						ErrorLog_log("HAL_I2C_SlaveTxCpltCallback", msg);
+						Error_Handler();
+					}
+				} else {
+					I2CSlave_TransmitIndex++;
+					if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, ((uint8_t *) I2CSlave_punchToSendPointer)+I2CSlave_TransmitIndex, 1, I2C_FIRST_FRAME)) != HAL_OK)
+					{
+						char msg[30];
+						sprintf(msg, "PUNCHREGADDR:ret: %u", status);
+						ErrorLog_log("HAL_I2C_SlaveTxCpltCallback", msg);
+						Error_Handler();
+					}
 				}
 			}
 			if (I2CSlave_TransmitIndex + 1 == I2CSlave_PunchLength)
 			{
 				// Last byte sent
-				if (&I2CSlave_emptyPunch != I2CSlave_punchToSendPointer)
+				if (I2CSlave_punchToSendPointer != NULL)
 				{
 					PunchQueue_popSafe(&incomingPunchQueue, I2CSlave_punchToSendID); // in theory another punch could have been added to the queue and we now pops the wrong one...make a safe pop version
 				}
@@ -119,11 +140,14 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 		}
 		case ERRORMSGREGADDR:
 		{
-			if (I2CSlave_TransmitIndex < strlen(I2CSlave_errorMessage))
+			if (I2CSlave_TransmitIndex < strlen(ErrorLog_getMessage()))
 			{
 				I2CSlave_TransmitIndex++;
-				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, (uint8_t *)&I2CSlave_errorMessage[I2CSlave_TransmitIndex], 1, I2C_FIRST_FRAME)) != HAL_OK)
+				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, (uint8_t *)&ErrorLog_getMessage()[I2CSlave_TransmitIndex], 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
+					char msg[100];
+					sprintf(msg, "ERRORMSGREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_SlaveTxCpltCallback", msg);
 					/* enable listen again? log error and return? */
 					Error_Handler();
 				}
@@ -152,17 +176,37 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 			{
 				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, &I2CSlave_serialNumber[I2CSlave_ReceiveIndex], 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
+					char msg[30];
+					sprintf(msg, "SERIALNOREGADDR:ret: %u", status);
+					ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
+
 					Error_Handler();
 				}
 				I2CSlave_ReceiveIndex++;
 			}
 			break;
 		}
+		case HARDWAREFEATURESREGADDR:
+		{
+			uint8_t featuresRegister;
+			if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, &featuresRegister, 1, I2C_FIRST_FRAME)) != HAL_OK)
+			{
+				char msg[35];
+				sprintf(msg, "HARDWAREFEATURESREGADDR:ret: %u", status);
+				ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
+				Error_Handler();
+			}
+			ErrorLog_printErrorsToUARTEnabled = (featuresRegister & 0x04);
+			break;
+		}
 		case SETDATAINDEXREGADDR:
 		{
 			if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, &I2CSlave_TransmitIndex, 1, I2C_FIRST_FRAME)) != HAL_OK)
 			{
-				 Error_Handler();
+				char msg[30];
+				sprintf(msg, "SETDATAINDEXREGADDR:ret: %u", status);
+				ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
+				Error_Handler();
 			}
 			break;
 		}
@@ -170,7 +214,10 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 		{
 			if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, &I2CSlave_receivedRegister[1], 1, I2C_FIRST_FRAME)) != HAL_OK)
 			{
-			     Error_Handler();
+				char msg[30];
+				sprintf(msg, "PUNCHREGADDR:ret: %u", status);
+				ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
+				Error_Handler();
 			}
 			break;
 		}
@@ -198,6 +245,10 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 				uint8_t firmwareVersion = I2CSLAVE_FIRMWAREVERSION;
 				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &firmwareVersion, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
+					char msg[100];
+					sprintf(msg, "FIRMWAREVERSIONREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_AddrCallback", msg);
+
 					Error_Handler();
 				}
 				break;
@@ -207,6 +258,9 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 				uint8_t hardwareFeatures = I2CSLAVE_REDCHANNELBIT | I2CSLAVE_BLUECHANNELBIT;
 				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &hardwareFeatures, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
+					char msg[100];
+					sprintf(msg, "HARDWAREFEATURESREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_AddrCallback", msg);
 					Error_Handler();
 				}
 				break;
@@ -216,6 +270,9 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 				I2CSlave_TransmitIndex=0;
 				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &I2CSlave_serialNumber[I2CSlave_TransmitIndex], 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
+					char msg[100];
+					sprintf(msg, "SERIALNOREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_AddrCallback", msg);
 					Error_Handler();
 				}
 				break;
@@ -225,6 +282,9 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 				uint8_t errorCount = 1;
 				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &errorCount, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
+					char msg[100];
+					sprintf(msg, "ERRORCOUNTREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_AddrCallback", msg);
 					Error_Handler();
 				}
 				break;
@@ -232,14 +292,22 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 			case STATUSREGADDR:
 			{
 				uint8_t status = 0x00;
-				if (PunchQueue_getNoOfItems()> 0)
+				if (PunchQueue_getNoOfItems(&incomingPunchQueue)> 0)
 				{
 					status |= 0x01;
 				}
-				// todo: set error bit if error msg exists
+
+				uint16_t errorCount = ErrorLog_getErrorCount();
+				if (errorCount > I2CSlave_LastErrorCount)
+				{
+					status |= 0x80;
+				}
 
 				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &status, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
+					char msg[100];
+					sprintf(msg, "STATUSREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_AddrCallback", msg);
 					/* enable listen again? log error and return? */
 					Error_Handler();
 				}
@@ -255,6 +323,9 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 				uint8_t lengthOfPunch = sizeof(struct Punch);
 				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &lengthOfPunch, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
+					char msg[100];
+					sprintf(msg, "PUNCHLENGTHREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_AddrCallback", msg);
 					/* enable listen again? log error and return? */
 					Error_Handler();
 				}
@@ -262,9 +333,12 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 			}
 			case ERRORLENGTHREGADDR:
 			{
-				uint8_t lengthOfErrorMsg = strlen(I2CSlave_errorMessage); // todo:
+				uint8_t lengthOfErrorMsg = strlen(ErrorLog_getMessage());
 				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &lengthOfErrorMsg, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
+					char msg[100];
+					sprintf(msg, "ERRORLENGTHREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_AddrCallback", msg);
 					/* enable listen again? log error and return? */
 					Error_Handler();
 				}
@@ -277,27 +351,47 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 					PunchQueue_peek(&incomingPunchQueue, &I2CSlave_punchToSendBuffer, &I2CSlave_punchToSendID);
 					I2CSlave_punchToSendPointer = &I2CSlave_punchToSendBuffer;
 				} else {
-					I2CSlave_punchToSendPointer = &I2CSlave_emptyPunch;
+					I2CSlave_punchToSendPointer = NULL;
 				}
 				if (I2CSlave_TransmitIndex < I2CSlave_PunchLength)
 				{
-
-					if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, ((uint8_t *) I2CSlave_punchToSendPointer) + I2CSlave_TransmitIndex, 1, I2C_FIRST_FRAME)) != HAL_OK)
+					if (I2CSlave_punchToSendPointer == NULL) {
+						uint8_t zeroByte = 0;
+						if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &zeroByte, 1, I2C_FIRST_FRAME)) != HAL_OK)
+						{
+							char msg[30];
+							sprintf(msg, "PUNCHREGADDR:1ret: %u", status);
+							ErrorLog_log("HAL_I2C_AddrCallback", msg);
+							Error_Handler();
+						}
+					}
+					else
 					{
-						Error_Handler();
+						if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, ((uint8_t *) I2CSlave_punchToSendPointer) + I2CSlave_TransmitIndex, 1, I2C_FIRST_FRAME)) != HAL_OK)
+						{
+							char msg[30];
+							sprintf(msg, "PUNCHREGADDR:2ret: %u", status);
+							ErrorLog_log("HAL_I2C_AddrCallback", msg);
+							Error_Handler();
+						}
 					}
 				}
 				break;
 			}
 			case ERRORMSGREGADDR:
 			{
-				if (I2CSlave_TransmitIndex < strlen(I2CSlave_errorMessage))
+				if (I2CSlave_TransmitIndex < strlen(ErrorLog_getMessage()))
 				{
-					if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, (uint8_t *)&I2CSlave_errorMessage + I2CSlave_TransmitIndex, 1, I2C_FIRST_FRAME)) != HAL_OK)
+					if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, (uint8_t *)ErrorLog_getMessage() + I2CSlave_TransmitIndex, 1, I2C_FIRST_FRAME)) != HAL_OK)
 					{
+						char msg[100];
+						sprintf(msg, "ERRORMSGREGADDR:ret: %u", status);
+						ErrorLog_log("HAL_I2C_AddrCallback", msg);
 						/* enable listen again? log error and return? */
 						Error_Handler();
 					}
+				} else {
+					I2CSlave_LastErrorCount = ErrorLog_getErrorCount();
 				}
 				break;
 			}
@@ -306,8 +400,11 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 	else
 	{
 		/*##- Put I2C peripheral in reception process ###########################*/
-		if (HAL_I2C_Slave_Seq_Receive_IT(hi2c, I2CSlave_receivedRegister, 1, I2C_FIRST_FRAME) != HAL_OK)
+		if ((status = HAL_I2C_Slave_Seq_Receive_IT(hi2c, I2CSlave_receivedRegister, 1, I2C_FIRST_FRAME)) != HAL_OK)
 		{
+			char msg[100];
+			sprintf(msg, "ELSE:ret: %u", status);
+			ErrorLog_log("HAL_I2C_AddrCallback", msg);
 			/* Transfer error in reception process */
 			Error_Handler();
 		}
@@ -330,6 +427,9 @@ void HAL_I2C_ListenCpltCallback(I2C_HandleTypeDef *hi2c)
 	/* restart listening for master requests */
 	if((status = HAL_I2C_EnableListen_IT(hi2c)) != HAL_OK)
 	{
+		char msg[50];
+		sprintf(msg, "ret: %u", status);
+		ErrorLog_log("I2C_ListenCpltCallback", msg);
 		Error_Handler();
 	}
 }
@@ -351,6 +451,9 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *I2cHandle)
 	uint8_t status = 0;
 	if ((status = HAL_I2C_GetError(I2cHandle)) != HAL_I2C_ERROR_AF)
 	{
+		char msg[35] = {0};
+		sprintf(msg, "I2C_GetError ret: %u", status);
+		ErrorLog_log("I2C_ErrorCallback", msg);
 		Error_Handler();
 	}
 }

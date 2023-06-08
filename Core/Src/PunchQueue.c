@@ -9,7 +9,6 @@
 
 
 struct PunchQueue incomingPunchQueue = { .PunchQueue_front = -1, .PunchQueue_rear = -1 };
-struct PunchQueue outgoingPunchQueue = { .PunchQueue_front = -1, .PunchQueue_rear = -1 };
 
 
 // Check if the queue is full

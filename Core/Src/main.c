@@ -479,7 +479,7 @@ static bool EnableI2CListen()
 		if((retStatus = HAL_I2C_EnableListen_IT(&hi2c2)) != HAL_OK)
 		{
 			char msg[60];
-			sprintf(msg, "HAL_I2C_EnableListen_IT returned: %u hi2c2->State: %u\r\n", retStatus, hi2c2.State);
+			sprintf(msg, "HAL_I2C_EnableListen_IT ret: %u hi2c2->State: %u", retStatus, hi2c2.State);
 			ErrorLog_log("EnableI2CListen", msg);
 
 			noOfTries++;
@@ -580,14 +580,13 @@ static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectP
 	readlength = CC2500_GetPacketLength(phspi, chipSelectPortPin);
 	if ( readlength != writelength ) {
 		char msg[100];
-		sprintf(msg, "readLength: %u writeLength: %u\r\n", readlength, writelength);
+		sprintf(msg, "readLen: %u writeLen: %u", readlength, writelength);
 		ErrorLog_log("InitCC2500", msg);
 		// reset
 	}
 
 
 	CC2500_SetGDO0OutputPinConfiguration(phspi, chipSelectPortPin, GDOx_CFG_ASSERT_SYNC_WORD);
-	//CC2500_SetGDO2OutputPinConfiguration(phspi, chipSelectPortPin, GDOx_CFG_PA_PD);
 
 	// Switch to RX after sending packet, Stay in RX after receiving packet, Keep CCA_MODE default
 	CC2500_SetMainRadioControlStateMachineConfiguration1(phspi, chipSelectPortPin, MCSM1_CCA_MODE_DEFAULT |	MCSM1_RXOFF_MODE_STAY_IN_RX | MCSM1_TXOFF_MODE_RX );
@@ -596,8 +595,6 @@ static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectP
 
 	// Whitening OFF, normal packet format, CRC Enabled, Variable packet length mode. First byte after sync word.
 	CC2500_SetPacketAutomationControl(phspi, chipSelectPortPin, PKTCTRL0_CRC_EN | PKTCTRL0_VARIABLE_PACKET_LENGTH);
-
-	CC2500_SetOutputPower(phspi, chipSelectPortPin, PATABLE_0DBM);
 
 	// 178 kHz
 	CC2500_SetFrequencySynthesizerControl1(phspi, chipSelectPortPin, 0x07);
@@ -657,7 +654,7 @@ static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectP
 		noOfTries++;
 		if (noOfTries > 200) {
 			char msg[100];
-			sprintf(msg, "Carrier sense not reached, pktstatus: %u \r\n", pktstatus);
+			sprintf(msg, "Carrier sense not reached, pktstatus: %u", pktstatus);
 			ErrorLog_log("InitCC2500", msg);
 			// reset
 		}
@@ -729,7 +726,7 @@ static void ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 	// read the length byte
 	if (!CC2500_ReadRXFifo(phspi, chipSelectPortPin, &punch.payloadLength, 1))
 	{
-		ErrorLog_log("ReadMessage", "CC2500_ReadRXFifo returned false (1)");
+		ErrorLog_log("ReadMessage", "CC2500_ReadRXFifo ret false (1)");
 		return;
 	}
 
@@ -737,12 +734,12 @@ static void ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 	{
 		if (!CC2500_ReadRXFifo(phspi, chipSelectPortPin, punch.payload, punch.payloadLength))
 		{
-			ErrorLog_log("ReadMessage", "CC2500_ReadRXFifo returned false (2)");
+			ErrorLog_log("ReadMessage", "CC2500_ReadRXFifo ret false (2)");
 			return;
 		}
 		if (!CC2500_ReadRXFifo(phspi, chipSelectPortPin, (uint8_t *)&punch.messageStatus, 2))
 		{
-			ErrorLog_log("ReadMessage", "CC2500_ReadRXFifo returned false (3)");
+			ErrorLog_log("ReadMessage", "CC2500_ReadRXFifo ret false (3)");
 			return;
 		}
 		punch.channel = chipSelectPortPin->Channel;
