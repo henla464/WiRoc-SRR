@@ -12,7 +12,6 @@
 #include "stdint.h"
 #include "PunchQueue.h"
 
-
 extern __IO uint32_t I2C_Transfer_Complete;
 
 extern uint8_t I2CSlave_serialNumber[4];

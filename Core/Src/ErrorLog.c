@@ -9,7 +9,7 @@
 uint16_t ErrorLog_errorCount = 0;
 char ErrorLog_message[256];
 bool ErrorLog_UARTInitialized = false;
-bool ErrorLog_printErrorsToUARTEnabled = false;
+bool ErrorLog_printErrorsToUARTEnabled = true;
 UART_HandleTypeDef* ErrorLog_huart;
 
 void ErrorLog_log(char* functionName, char* message)

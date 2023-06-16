@@ -32,13 +32,18 @@ struct Punch *I2CSlave_punchToSendPointer;
 struct Punch *I2CSlave_punchToSendID;
 struct Punch I2CSlave_punchToSendBuffer;
 
-//struct Punch I2CSlave_emptyPunch = { .payloadLength = 99, .payload = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30}, .messageStatus = { .rssi = 100, .crc = 1}};
 uint8_t I2CSlave_PunchLength = sizeof(struct Punch);
 uint8_t I2CSlave_receivedRegister[2];
 uint8_t I2CSlave_serialNumber[4] = {5, 6, 7, 8};
 uint16_t I2CSlave_LastErrorCount = 0;
 uint8_t I2CSlave_TransmitIndex = 0;
 uint8_t I2CSlave_ReceiveIndex = 0;
+
+void I2C_Reset(I2C_HandleTypeDef *hi2c)
+{
+	RCC->APBRSTR1 |= (1 << 22);
+	InitI2C();
+}
 
 void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 {

@@ -9,6 +9,7 @@
 #define INC_PUNCHQUEUE_H_
 #include <stdio.h>
 #include <stdbool.h>
+#include "stm32g0xx_hal.h"
 
 #define PUNCHQUEUE_SIZE 6
 #define PUNCH_LENGTH 30

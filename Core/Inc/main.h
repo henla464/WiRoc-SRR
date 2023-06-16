@@ -56,6 +56,7 @@ void _Error_Handler(char *, int);
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
+void InitI2C();
 
 /* USER CODE BEGIN EFP */
 

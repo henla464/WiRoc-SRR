@@ -124,9 +124,12 @@ int main(void)
 	  HAL_I2C_Init(&hi2c2);
 	  if (!EnableI2CListen())
 	  {
-		  // reset!
+		  HAL_NVIC_SystemReset();
 	  }
   }
+
+  // Disable after initialization, user can enable it again through I2C api
+  ErrorLog_printErrorsToUARTEnabled = false;
 
   /* USER CODE END 2 */
 
@@ -143,7 +146,7 @@ int main(void)
 			  HAL_I2C_Init(&hi2c2);
 			  if (!EnableI2CListen())
 			  {
-				  // reset!
+				  HAL_NVIC_SystemReset();
 			  }
 		  }
 	  }
@@ -440,7 +443,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : PC15 */
   GPIO_InitStruct.Pin = GPIO_PIN_15;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
@@ -464,6 +467,11 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void InitI2C()
+{
+	MX_I2C2_Init();
+}
+
 
 static bool EnableI2CListen()
 {
@@ -582,7 +590,7 @@ static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectP
 		char msg[100];
 		sprintf(msg, "readLen: %u writeLen: %u", readlength, writelength);
 		ErrorLog_log("InitCC2500", msg);
-		// reset
+		HAL_NVIC_SystemReset();
 	}
 
 
@@ -656,7 +664,7 @@ static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectP
 			char msg[100];
 			sprintf(msg, "Carrier sense not reached, pktstatus: %u", pktstatus);
 			ErrorLog_log("InitCC2500", msg);
-			// reset
+			HAL_NVIC_SystemReset();
 		}
 	}
 
@@ -742,9 +750,19 @@ static void ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 			ErrorLog_log("ReadMessage", "CC2500_ReadRXFifo ret false (3)");
 			return;
 		}
-		punch.channel = chipSelectPortPin->Channel;
-		// todo check CRC and dont reply if wrong
-		PunchQueue_enQueue(&incomingPunchQueue, &punch);
+		if (punch.messageStatus.crc & 0x80)
+		{
+			// CRC OK
+			punch.channel = chipSelectPortPin->Channel;
+			if (!PunchQueue_enQueue(&incomingPunchQueue, &punch))
+			{
+				// queue full so don't ack
+				ErrorLog_log("ReadMessage", "Queue full");
+				return;
+			}
+		} else {
+			return;
+		}
 	} else {
 		ErrorLog_log("ReadMessage", "Received too few bytes so will flush");
 		CC2500_ExitRXTX(phspi, chipSelectPortPin);
@@ -871,12 +889,7 @@ void Error_Handler(void)
 	sprintf(msg, "FILE: %s LINE: %u\r\n", file, line);
 	ErrorLog_log("_Error_Hanler", msg);
 
-	// reset ?
-
-	//HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_SET);
-	//HAL_Delay(1000);
-	//HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
-	//HAL_Delay(1000);
+	HAL_NVIC_SystemReset();
   /* USER CODE END Error_Handler_Debug */
 }
 

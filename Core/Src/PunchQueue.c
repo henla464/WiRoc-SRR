@@ -59,12 +59,22 @@ bool PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch)
 	}
 	else
 	{
+		if (punch->payload[4] == queue->PunchQueue_items[queue->PunchQueue_rear].payload[4] &&
+				punch->payload[5]  == queue->PunchQueue_items[queue->PunchQueue_rear].payload[5] &&
+				punch->payload[6] == queue->PunchQueue_items[queue->PunchQueue_rear].payload[6] &&
+				punch->payload[7] == queue->PunchQueue_items[queue->PunchQueue_rear].payload[7] &&
+				punch->payload[11] == queue->PunchQueue_items[queue->PunchQueue_rear].payload[11] )
+		{
+			// Same punch as previously received
+			return false;
+		}
 		if (queue->PunchQueue_front == -1)
 		{
 			queue->PunchQueue_front = 0;
 		}
 		queue->PunchQueue_rear = (queue->PunchQueue_rear + 1) % PUNCHQUEUE_SIZE;
 		queue->PunchQueue_items[queue->PunchQueue_rear] = *punch;
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_SET);
 		return true;
 	}
 }
@@ -81,6 +91,7 @@ bool PunchQueue_deQueue(struct PunchQueue * queue, struct Punch * punch)
 		if (queue->PunchQueue_front == queue->PunchQueue_rear) {
 			queue->PunchQueue_front = -1;
 			queue->PunchQueue_rear = -1;
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
 		}
 		else
 		{
@@ -115,6 +126,7 @@ bool PunchQueue_pop(struct PunchQueue * queue)
 		if (queue->PunchQueue_front == queue->PunchQueue_rear) {
 			queue->PunchQueue_front = -1;
 			queue->PunchQueue_rear = -1;
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
 		}
 		else
 		{
@@ -138,6 +150,7 @@ bool PunchQueue_popSafe(struct PunchQueue * queue, struct Punch * punchID)
 			if (queue->PunchQueue_front == queue->PunchQueue_rear) {
 				queue->PunchQueue_front = -1;
 				queue->PunchQueue_rear = -1;
+				HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
 			}
 			else
 			{
