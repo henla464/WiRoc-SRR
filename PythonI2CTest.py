@@ -38,7 +38,7 @@ plen = bus.read_byte_data(addr, 0x20)
 print(plen)
 
 # read punch
-index = 0;
+index = 0
 if plen > 0: # and (status & 0x01) > 0:
 	while index < plen:
 		bus.write_byte_data(addr, 0x05, index)

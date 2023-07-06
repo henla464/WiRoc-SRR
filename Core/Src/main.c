@@ -129,7 +129,7 @@ int main(void)
   }
 
   // Disable after initialization, user can enable it again through I2C api
-  ErrorLog_printErrorsToUARTEnabled = false;
+  //ErrorLog_printErrorsToUARTEnabled = false;
 
   /* USER CODE END 2 */
 
@@ -738,7 +738,7 @@ static void ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 		return;
 	}
 
-	if (noOfRxBytes2 >= punch.payloadLength + 3)
+	if (noOfRxBytes2 >= punch.payloadLength + 3 && punch.payloadLength <= len(punch.payload))
 	{
 		if (!CC2500_ReadRXFifo(phspi, chipSelectPortPin, punch.payload, punch.payloadLength))
 		{
@@ -764,12 +764,14 @@ static void ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 			return;
 		}
 	} else {
-		ErrorLog_log("ReadMessage", "Received too few bytes so will flush");
+		ErrorLog_log("ReadMessage", "Received too few bytes or too many so will flush");
 		CC2500_ExitRXTX(phspi, chipSelectPortPin);
 		CC2500_FlushRXFIFO(phspi, chipSelectPortPin);
 		CC2500_EnableRX(phspi, chipSelectPortPin);
 		return;
 	}
+
+	return;
 
 	CC2500_ExitRXTX(phspi, chipSelectPortPin);
 	do {

@@ -59,7 +59,8 @@ bool PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch)
 	}
 	else
 	{
-		if (punch->payload[4] == queue->PunchQueue_items[queue->PunchQueue_rear].payload[4] &&
+		if (queue->PunchQueue_rear >= 0 &&
+				punch->payload[4] == queue->PunchQueue_items[queue->PunchQueue_rear].payload[4] &&
 				punch->payload[5]  == queue->PunchQueue_items[queue->PunchQueue_rear].payload[5] &&
 				punch->payload[6] == queue->PunchQueue_items[queue->PunchQueue_rear].payload[6] &&
 				punch->payload[7] == queue->PunchQueue_items[queue->PunchQueue_rear].payload[7] &&
