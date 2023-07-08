@@ -51,12 +51,11 @@ extern "C" {
 #define Error_Handler0() _Error_Handler( __FILE__, __LINE__ )
 #define Error_Handler1(unused) _Error_Handler( char * file, int line )
 void _Error_Handler(char *, int);
-
+void InitI2C();
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
-void InitI2C();
 
 /* USER CODE BEGIN EFP */
 

@@ -75,7 +75,7 @@ bool PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch)
 		}
 		queue->PunchQueue_rear = (queue->PunchQueue_rear + 1) % PUNCHQUEUE_SIZE;
 		queue->PunchQueue_items[queue->PunchQueue_rear] = *punch;
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
 		return true;
 	}
 }
@@ -92,7 +92,7 @@ bool PunchQueue_deQueue(struct PunchQueue * queue, struct Punch * punch)
 		if (queue->PunchQueue_front == queue->PunchQueue_rear) {
 			queue->PunchQueue_front = -1;
 			queue->PunchQueue_rear = -1;
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
 		}
 		else
 		{
@@ -127,7 +127,7 @@ bool PunchQueue_pop(struct PunchQueue * queue)
 		if (queue->PunchQueue_front == queue->PunchQueue_rear) {
 			queue->PunchQueue_front = -1;
 			queue->PunchQueue_rear = -1;
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
 		}
 		else
 		{
@@ -151,7 +151,7 @@ bool PunchQueue_popSafe(struct PunchQueue * queue, struct Punch * punchID)
 			if (queue->PunchQueue_front == queue->PunchQueue_rear) {
 				queue->PunchQueue_front = -1;
 				queue->PunchQueue_rear = -1;
-				HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
+				HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
 			}
 			else
 			{

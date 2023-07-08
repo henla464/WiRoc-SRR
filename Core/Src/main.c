@@ -49,13 +49,14 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-I2C_HandleTypeDef hi2c2;
+I2C_HandleTypeDef hi2c1;
 
 SPI_HandleTypeDef hspi1;
 SPI_HandleTypeDef hspi2;
 
-UART_HandleTypeDef huart2;
+UART_HandleTypeDef huart1;
 
+bool isInitialized = false;
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -63,8 +64,8 @@ UART_HandleTypeDef huart2;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART2_UART_Init(void);
-static void MX_I2C2_Init(void);
+static void MX_USART1_UART_Init(void);
+static void MX_I2C1_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
@@ -105,28 +106,33 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_USART2_UART_Init();
-  MX_I2C2_Init();
+  MX_USART1_UART_Init();
+  MX_I2C1_Init();
   MX_SPI1_Init();
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
   HAL_Delay(1);
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_9, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
 
-  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
-  HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
 
   if (!EnableI2CListen())
   {
 	  // Tried multiple times
-	  HAL_I2C_DeInit(&hi2c2);
-	  HAL_I2C_Init(&hi2c2);
+	  HAL_I2C_DeInit(&hi2c1);
+	  HAL_I2C_Init(&hi2c1);
 	  if (!EnableI2CListen())
 	  {
 		  HAL_NVIC_SystemReset();
 	  }
   }
+
+  /* PA6 PA12 is interrupt from CC2500
+   * To avoid them being triggered too early we enable irq here
+   * instead of in MX_GPIO_Init() */
+  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+  HAL_Delay(1);
+  isInitialized = true;
 
   // Disable after initialization, user can enable it again through I2C api
   //ErrorLog_printErrorsToUARTEnabled = false;
@@ -139,11 +145,11 @@ int main(void)
   {
 
 	  // You can try to reset the peripheral to see if it frees up. You can reset the peripheral with the I2C_CR1_SWRST bit.
-	  if (hi2c2.State == HAL_I2C_STATE_READY) {
+	  if (hi2c1.State == HAL_I2C_STATE_READY) {
 		  if (!EnableI2CListen())
 		  {
-			  HAL_I2C_DeInit(&hi2c2);
-			  HAL_I2C_Init(&hi2c2);
+			  HAL_I2C_DeInit(&hi2c1);
+			  HAL_I2C_Init(&hi2c1);
 			  if (!EnableI2CListen())
 			  {
 				  HAL_NVIC_SystemReset();
@@ -158,7 +164,7 @@ int main(void)
 	  {
 		   for(int i=0;i<6;i++) {
 			  char header[] = "Message\r\n";
-			  HAL_UART_Transmit(&huart2, header, strlen(header), HAL_MAX_DELAY);
+			  HAL_UART_Transmit(&huart1, header, strlen(header), HAL_MAX_DELAY);
 
 			  for(int idx=0;idx<33;idx++)
 			  {
@@ -168,12 +174,12 @@ int main(void)
 				  {
 					  char msg[100];
 			  		  sprintf(msg, format3, PunchQueue_items[i][idx]);
-			  		  HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+			  		  HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
 				  } else
 				  {
 					  char msg[100];
 					  sprintf(msg, format2, PunchQueue_items[i][idx]);
-					  HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+					  HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
 				  }
 			  }
 		  }
@@ -232,50 +238,50 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief I2C2 Initialization Function
+  * @brief I2C1 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_I2C2_Init(void)
+static void MX_I2C1_Init(void)
 {
 
-  /* USER CODE BEGIN I2C2_Init 0 */
+  /* USER CODE BEGIN I2C1_Init 0 */
 
-  /* USER CODE END I2C2_Init 0 */
+  /* USER CODE END I2C1_Init 0 */
 
-  /* USER CODE BEGIN I2C2_Init 1 */
+  /* USER CODE BEGIN I2C1_Init 1 */
 
-  /* USER CODE END I2C2_Init 1 */
-  hi2c2.Instance = I2C2;
-  hi2c2.Init.Timing = 0x10707DBC;
-  hi2c2.Init.OwnAddress1 = 64;
-  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-  hi2c2.Init.OwnAddress2 = 0;
-  hi2c2.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
-  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.Timing = 0x10707DBC;
+  hi2c1.Init.OwnAddress1 = 64;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
   {
     Error_Handler();
   }
 
   /** Configure Analogue filter
   */
-  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c2, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
   {
     Error_Handler();
   }
 
   /** Configure Digital filter
   */
-  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c2, 0) != HAL_OK)
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN I2C2_Init 2 */
+  /* USER CODE BEGIN I2C1_Init 2 */
 
-  /* USER CODE END I2C2_Init 2 */
+  /* USER CODE END I2C1_Init 2 */
 
 }
 
@@ -316,7 +322,7 @@ static void MX_SPI1_Init(void)
   /* USER CODE BEGIN SPI1_Init 2 */
   struct PortAndPin chipSelectPortPin;
   chipSelectPortPin.GPIOx = GPIOA;
-  chipSelectPortPin.GPIO_Pin = GPIO_PIN_8;
+  chipSelectPortPin.GPIO_Pin = GPIO_PIN_15;
   chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
   chipSelectPortPin.Channel = REDCHANNEL;
 
@@ -348,7 +354,7 @@ static void MX_SPI2_Init(void)
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -361,9 +367,9 @@ static void MX_SPI2_Init(void)
   }
   /* USER CODE BEGIN SPI2_Init 2 */
   struct PortAndPin chipSelectPortPin;
-  chipSelectPortPin.GPIOx = GPIOB;
-  chipSelectPortPin.GPIO_Pin = GPIO_PIN_9;
-  chipSelectPortPin.InterruptIRQ = EXTI0_1_IRQn;
+  chipSelectPortPin.GPIOx = GPIOA;
+  chipSelectPortPin.GPIO_Pin = GPIO_PIN_5;
+  chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
   chipSelectPortPin.Channel = BLUECHANNEL;
 
 
@@ -373,40 +379,53 @@ static void MX_SPI2_Init(void)
 }
 
 /**
-  * @brief USART2 Initialization Function
+  * @brief USART1 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_USART2_UART_Init(void)
+static void MX_USART1_UART_Init(void)
 {
 
-  /* USER CODE BEGIN USART2_Init 0 */
+  /* USER CODE BEGIN USART1_Init 0 */
 
-  /* USER CODE END USART2_Init 0 */
+  /* USER CODE END USART1_Init 0 */
 
-  /* USER CODE BEGIN USART2_Init 1 */
+  /* USER CODE BEGIN USART1_Init 1 */
 
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart2.Init.ClockPrescaler = UART_PRESCALER_DIV1;
-  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN USART2_Init 2 */
-  char msg[] = "UART2 Started\r\n";
-  HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
-  ErrorLog_SetUARTInitialized(&huart2, true);
-  /* USER CODE END USART2_Init 2 */
+  if (HAL_UARTEx_SetTxFifoThreshold(&huart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_DisableFifoMode(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+  char msg[] = "UART1 Started\r\n";
+  HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+  ErrorLog_SetUARTInitialized(&huart1, true);
+
+  /* USER CODE END USART1_Init 2 */
 
 }
 
@@ -420,62 +439,51 @@ static void MX_GPIO_Init(void)
   GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_9, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5|GPIO_PIN_15, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_15, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+  /*Configure GPIO pins : PA5 PA15 */
+  GPIO_InitStruct.Pin = GPIO_PIN_5|GPIO_PIN_15;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PB9 */
-  GPIO_InitStruct.Pin = GPIO_PIN_9;
+  /*Configure GPIO pins : PA6 PA12 */
+  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_12;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PB1 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PC15 */
-  GPIO_InitStruct.Pin = GPIO_PIN_15;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PA1 PA4 */
-  GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_4;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PA8 */
-  GPIO_InitStruct.Pin = GPIO_PIN_8;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
   /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI0_1_IRQn, 0, 0);
   HAL_NVIC_SetPriority(EXTI4_15_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 
 }
 
 /* USER CODE BEGIN 4 */
 void InitI2C()
 {
-	MX_I2C2_Init();
+	MX_I2C1_Init();
 }
 
 
 static bool EnableI2CListen()
 {
-	if (hi2c2.State == HAL_I2C_STATE_LISTEN)
+	if (hi2c1.State == HAL_I2C_STATE_LISTEN)
 	{
 		return true;
 	}
@@ -484,10 +492,10 @@ static bool EnableI2CListen()
 	{
 		HAL_Delay(1);
 		uint8_t retStatus;
-		if((retStatus = HAL_I2C_EnableListen_IT(&hi2c2)) != HAL_OK)
+		if((retStatus = HAL_I2C_EnableListen_IT(&hi2c1)) != HAL_OK)
 		{
 			char msg[60];
-			sprintf(msg, "HAL_I2C_EnableListen_IT ret: %u hi2c2->State: %u", retStatus, hi2c2.State);
+			sprintf(msg, "HAL_I2C_EnableListen_IT ret: %u hi2c1->State: %u", retStatus, hi2c1.State);
 			ErrorLog_log("EnableI2CListen", msg);
 
 			noOfTries++;
@@ -496,7 +504,7 @@ static bool EnableI2CListen()
 				return false;
 			}
 		}
-	} while (hi2c2.State != HAL_I2C_STATE_LISTEN);
+	} while (hi2c1.State != HAL_I2C_STATE_LISTEN);
 	return true;
 }
 
@@ -505,7 +513,7 @@ static void Configure_GDO_INT_1_AsRisingInterrupt()
 {
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
 	/*Configure GPIO pins : PA4 */
-	GPIO_InitStruct.Pin = GPIO_PIN_4;
+	GPIO_InitStruct.Pin = GPIO_PIN_12;
 	GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
@@ -518,7 +526,7 @@ static void Configure_GDO_INT_1_AsFallingInterrupt()
 {
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
 	/*Configure GPIO pins : PA4 */
-	GPIO_InitStruct.Pin = GPIO_PIN_4;
+	GPIO_InitStruct.Pin = GPIO_PIN_12;
 	GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
@@ -531,7 +539,7 @@ static void Configure_GDO_INT_1_AsGPIO()
 {
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
 	/*Configure GPIO pins : PA4 */
-	GPIO_InitStruct.Pin = GPIO_PIN_4;
+	GPIO_InitStruct.Pin = GPIO_PIN_12;
 	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
@@ -542,33 +550,33 @@ static void Configure_GDO_INT_2_AsRisingInterrupt()
 {
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
 	/*Configure GPIO pins : PA1 */
-	GPIO_InitStruct.Pin = GPIO_PIN_1;
+	GPIO_InitStruct.Pin = GPIO_PIN_6;
 	GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 	/* EXTI interrupt init*/
-	HAL_NVIC_SetPriority(EXTI0_1_IRQn, 0, 0);
+	HAL_NVIC_SetPriority(EXTI4_15_IRQn, 0, 0);
 }
 
 static void Configure_GDO_INT_2_AsFallingInterrupt()
 {
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
 	/*Configure GPIO pins : PA1 */
-	GPIO_InitStruct.Pin = GPIO_PIN_1;
+	GPIO_InitStruct.Pin = GPIO_PIN_6;
 	GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 	/* EXTI interrupt init*/
-	HAL_NVIC_SetPriority(EXTI0_1_IRQn, 0, 0);
+	HAL_NVIC_SetPriority(EXTI4_15_IRQn, 0, 0);
 }
 
 static void Configure_GDO_INT_2_AsGPIO()
 {
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
 	/*Configure GPIO pins : PA1 */
-	GPIO_InitStruct.Pin = GPIO_PIN_1;
+	GPIO_InitStruct.Pin = GPIO_PIN_6;
 	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
@@ -692,10 +700,10 @@ static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectP
 		if (value < 0x0F)
 		{
 			sprintf(msg, format2, value);
-			HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+			HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
 		} else {
 			sprintf(msg, format, value);
-			HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+			HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
 		}
 	}*/
 
@@ -738,7 +746,7 @@ static void ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 		return;
 	}
 
-	if (noOfRxBytes2 >= punch.payloadLength + 3 && punch.payloadLength <= len(punch.payload))
+	if (noOfRxBytes2 >= punch.payloadLength + 3 && punch.payloadLength <= sizeof(punch.payload))
 	{
 		if (!CC2500_ReadRXFifo(phspi, chipSelectPortPin, punch.payload, punch.payloadLength))
 		{
@@ -764,14 +772,12 @@ static void ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 			return;
 		}
 	} else {
-		ErrorLog_log("ReadMessage", "Received too few bytes or too many so will flush");
+		ErrorLog_log("ReadMessage", "Received too few bytes or the payload length byte in message is too large so will flush");
 		CC2500_ExitRXTX(phspi, chipSelectPortPin);
 		CC2500_FlushRXFIFO(phspi, chipSelectPortPin);
 		CC2500_EnableRX(phspi, chipSelectPortPin);
 		return;
 	}
-
-	return;
 
 	CC2500_ExitRXTX(phspi, chipSelectPortPin);
 	do {
@@ -783,7 +789,7 @@ static void ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 	CC2500_WriteTXFifo(phspi, chipSelectPortPin, PunchReply, replyLength);
 
 	// Disable interrupt, change GDO0 to PA_PD
-	if (chipSelectPortPin->GPIO_Pin == GPIO_PIN_8) {
+	if (chipSelectPortPin->GPIO_Pin == GPIO_PIN_15) {
 		Configure_GDO_INT_1_AsGPIO();
 	} else {
 		Configure_GDO_INT_2_AsGPIO();
@@ -799,7 +805,7 @@ static void ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 	} while (!(packetStatus & 0x10)); // wait for channel clear
 
 	// Enable rising interrupts for CC2500-GDO0
-	if (chipSelectPortPin->GPIO_Pin == GPIO_PIN_8) {
+	if (chipSelectPortPin->GPIO_Pin == GPIO_PIN_15) {
 		Configure_GDO_INT_1_AsRisingInterrupt();
 	} else {
 		Configure_GDO_INT_2_AsRisingInterrupt();
@@ -813,16 +819,15 @@ static void AckSentEnableRX(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSe
 {
 	// must be in idle, but is probably in RX now...
 	CC2500_FlushTXFIFO(phspi, chipSelectPortPin);
-	if (chipSelectPortPin->GPIO_Pin == GPIO_PIN_8) {
+	if (chipSelectPortPin->GPIO_Pin == GPIO_PIN_15) {
 		Configure_GDO_INT_1_AsGPIO();
 	} else {
 		Configure_GDO_INT_2_AsGPIO();
 	}
 	CC2500_SetGDO0OutputPinConfiguration(phspi, chipSelectPortPin, GDOx_CFG_ASSERT_SYNC_WORD);
 	//Configure_GDO0 as falling interrupt
-	if (chipSelectPortPin->GPIO_Pin == GPIO_PIN_8) {
+	if (chipSelectPortPin->GPIO_Pin == GPIO_PIN_15) {
 		Configure_GDO_INT_1_AsFallingInterrupt();
-
 	} else {
 		Configure_GDO_INT_2_AsFallingInterrupt();
 	}
@@ -832,47 +837,53 @@ static void AckSentEnableRX(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSe
 
 void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 {
-    if(GPIO_Pin == GPIO_PIN_4) // PA4 - first CC2500
-    {
-    	struct PortAndPin chipSelectPortPin;
-    	chipSelectPortPin.GPIOx = GPIOA;
-    	chipSelectPortPin.GPIO_Pin = GPIO_PIN_8;
-    	chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
-    	chipSelectPortPin.Channel = REDCHANNEL;
+	if (isInitialized)
+	{
+		if(GPIO_Pin == GPIO_PIN_12) // PA12 - first CC2500
+		{
+			struct PortAndPin chipSelectPortPin;
+			chipSelectPortPin.GPIOx = GPIOA;
+			chipSelectPortPin.GPIO_Pin = GPIO_PIN_15;
+			chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
+			chipSelectPortPin.Channel = REDCHANNEL;
 
-   		ReadMessage(&hspi1, &chipSelectPortPin);
-    }
-    else if(GPIO_Pin == GPIO_PIN_1) // PA1 - second CC2500
-    {
-    	struct PortAndPin chipSelectPortPin;
-    	chipSelectPortPin.GPIOx = GPIOB;
-    	chipSelectPortPin.GPIO_Pin = GPIO_PIN_9;
-    	chipSelectPortPin.InterruptIRQ = EXTI0_1_IRQn;
-    	chipSelectPortPin.Channel = BLUECHANNEL;
+			ReadMessage(&hspi1, &chipSelectPortPin);
+		}
+		else if(GPIO_Pin == GPIO_PIN_6) // PA6 - second CC2500
+		{
+			struct PortAndPin chipSelectPortPin;
+			chipSelectPortPin.GPIOx = GPIOA;
+			chipSelectPortPin.GPIO_Pin = GPIO_PIN_5;
+			chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
+			chipSelectPortPin.Channel = BLUECHANNEL;
 
-		ReadMessage(&hspi2, &chipSelectPortPin);
+			ReadMessage(&hspi2, &chipSelectPortPin);
+		}
 	}
 }
 
 void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
-    if(GPIO_Pin == GPIO_PIN_4) // PA4 - first CC2500
-    {
-    	struct PortAndPin chipSelectPortPin;
-    	chipSelectPortPin.GPIOx = GPIOA;
-    	chipSelectPortPin.GPIO_Pin = GPIO_PIN_8;
-    	chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
+	if (isInitialized)
+	{
+		if(GPIO_Pin == GPIO_PIN_12) // PA12 - first CC2500
+		{
+			struct PortAndPin chipSelectPortPin;
+			chipSelectPortPin.GPIOx = GPIOA;
+			chipSelectPortPin.GPIO_Pin = GPIO_PIN_15;
+			chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
 
-    	AckSentEnableRX(&hspi1, &chipSelectPortPin);
-    }
-    else if(GPIO_Pin == GPIO_PIN_1) // PA1 - second CC2500
-    {
-    	struct PortAndPin chipSelectPortPin;
-    	chipSelectPortPin.GPIOx = GPIOB;
-    	chipSelectPortPin.GPIO_Pin = GPIO_PIN_9;
-    	chipSelectPortPin.InterruptIRQ = EXTI0_1_IRQn;
+			AckSentEnableRX(&hspi1, &chipSelectPortPin);
+		}
+		else if(GPIO_Pin == GPIO_PIN_6) // PA6 - second CC2500
+		{
+			struct PortAndPin chipSelectPortPin;
+			chipSelectPortPin.GPIOx = GPIOA;
+			chipSelectPortPin.GPIO_Pin = GPIO_PIN_5;
+			chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
 
-    	AckSentEnableRX(&hspi2, &chipSelectPortPin);
+			AckSentEnableRX(&hspi2, &chipSelectPortPin);
+		}
 	}
 }
 
@@ -886,6 +897,10 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
 	/* User can add his own implementation to report the HAL error return state */
+	do {
+
+	}while (1);
+
 	__disable_irq();
 	char msg[100];
 	sprintf(msg, "FILE: %s LINE: %u\r\n", file, line);

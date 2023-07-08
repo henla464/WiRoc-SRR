@@ -284,7 +284,7 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 			}
 			case ERRORCOUNTREGADDR:
 			{
-				uint8_t errorCount = 1;
+				uint8_t errorCount = ErrorLog_getErrorCount();
 				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &errorCount, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
 					char msg[100];
@@ -296,19 +296,19 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 			}
 			case STATUSREGADDR:
 			{
-				uint8_t status = 0x00;
+				uint8_t statusValToReturn = 0x00;
 				if (PunchQueue_getNoOfItems(&incomingPunchQueue)> 0)
 				{
-					status |= 0x01;
+					statusValToReturn |= 0x01;
 				}
 
 				uint16_t errorCount = ErrorLog_getErrorCount();
 				if (errorCount > I2CSlave_LastErrorCount)
 				{
-					status |= 0x80;
+					statusValToReturn |= 0x80;
 				}
 
-				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &status, 1, I2C_FIRST_FRAME)) != HAL_OK)
+				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &statusValToReturn, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
 					char msg[100];
 					sprintf(msg, "STATUSREGADDR:ret: %u", status);
@@ -325,7 +325,13 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 			}
 			case PUNCHLENGTHREGADDR:
 			{
-				uint8_t lengthOfPunch = sizeof(struct Punch);
+				uint8_t lengthOfPunch = 0;
+				if (PunchQueue_getNoOfItems(&incomingPunchQueue) > 0)
+				{
+					PunchQueue_peek(&incomingPunchQueue, &I2CSlave_punchToSendBuffer, &I2CSlave_punchToSendID);
+					lengthOfPunch = I2CSlave_punchToSendBuffer.payloadLength + 4;
+				}
+
 				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &lengthOfPunch, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
 					char msg[100];
@@ -351,7 +357,7 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 			}
 			case PUNCHREGADDR:
 			{
-				if (PunchQueue_getNoOfItems() > 0)
+				if (PunchQueue_getNoOfItems(&incomingPunchQueue) > 0)
 				{
 					PunchQueue_peek(&incomingPunchQueue, &I2CSlave_punchToSendBuffer, &I2CSlave_punchToSendID);
 					I2CSlave_punchToSendPointer = &I2CSlave_punchToSendBuffer;

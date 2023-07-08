@@ -10,6 +10,7 @@ uint8_t CC2500_WriteByteSPI(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSel
 	HAL_GPIO_WritePin(chipSelectPin->GPIOx, chipSelectPin->GPIO_Pin, GPIO_PIN_RESET);
 	if ( (status = HAL_SPI_TransmitReceive(hspi, (uint8_t*) &writevalue, (uint8_t*) &readvalue, 1, 5 )) != HAL_OK)
 	{
+		HAL_GPIO_WritePin(chipSelectPin->GPIOx, chipSelectPin->GPIO_Pin, GPIO_PIN_SET);
 		char msg[50];
 		sprintf(msg, "ret: %u", status);
 		ErrorLog_log("CC2500_WriteByteSPI", msg);
@@ -29,6 +30,7 @@ uint8_t CC2500_ReadRegister(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSel
 	HAL_GPIO_WritePin(chipSelectPin->GPIOx, chipSelectPin->GPIO_Pin, GPIO_PIN_RESET);
 	if ( (status = HAL_SPI_TransmitReceive(hspi, writeValues, readValues, 2, 5 )) != HAL_OK)
 	{
+		HAL_GPIO_WritePin(chipSelectPin->GPIOx, chipSelectPin->GPIO_Pin, GPIO_PIN_SET);
 		char msg[50];
 		sprintf(msg, "ret: %u", status);
 		ErrorLog_log("CC2500_ReadRegister", msg);
@@ -49,6 +51,7 @@ uint8_t CC2500_WriteRegister(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSe
 	HAL_GPIO_WritePin(chipSelectPin->GPIOx, chipSelectPin->GPIO_Pin, GPIO_PIN_RESET);
 	if ( (status = HAL_SPI_TransmitReceive(hspi, writeValues, readValues, 2, 5 )) != HAL_OK)
 	{
+		HAL_GPIO_WritePin(chipSelectPin->GPIOx, chipSelectPin->GPIO_Pin, GPIO_PIN_SET);
 		char msg[50];
 		sprintf(msg, "ret: %u", status);
 		ErrorLog_log("CC2500_WriteRegister", msg);
@@ -68,6 +71,7 @@ bool CC2500_WriteReadBytesSPI(SPI_HandleTypeDef* hspi, struct PortAndPin * chipS
 	HAL_GPIO_WritePin(chipSelectPin->GPIOx, chipSelectPin->GPIO_Pin, GPIO_PIN_RESET);
 	if ( (status = HAL_SPI_TransmitReceive(hspi, writeValues, readValues, length, 100 )) != HAL_OK)
 	{
+		HAL_GPIO_WritePin(chipSelectPin->GPIOx, chipSelectPin->GPIO_Pin, GPIO_PIN_SET);
 		char msg[50];
 		sprintf(msg, "ret: %u", status);
 		ErrorLog_log("CC2500_WriteReadBytesSPI", msg);
