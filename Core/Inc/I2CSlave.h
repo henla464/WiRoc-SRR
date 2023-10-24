@@ -16,4 +16,10 @@ extern __IO uint32_t I2C_Transfer_Complete;
 
 extern uint8_t I2CSlave_serialNumber[4];
 
+extern bool IsRedChannelEnabled();
+extern bool IsBlueChannelEnabled();
+extern bool IsSendErrorsToUARTEnabled();
+extern bool IsRedChannelListenOnlyEnabled();
+extern bool IsBlueChannelListenOnlyEnabled();
+
 #endif /* INC_I2CSLAVE_H_ */

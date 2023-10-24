@@ -15,11 +15,12 @@
 
 /*## REGISTER ADDRESSES ##*/
 #define FIRMWAREVERSIONREGADDR 0x00   // Version of the firware
-#define HARDWAREFEATURESREGADDR 0x01  // Hardware features available: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART
+#define HARDWAREFEATURESREGADDR 0x01  // Hardware features available: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART, bit 3: RED channel only listen, bit 4: BLUE channel only listen
 #define SERIALNOREGADDR 0x02  // Serialno of the dongle
 #define ERRORCOUNTREGADDR 0x03  // Serialno of the dongle
 #define STATUSREGADDR 0x04	  // Indicates what messages there is to fetch. bit 7: Error message, bit 0: Punch message
 #define SETDATAINDEXREGADDR 0x05  // Index to the block data a register
+#define HARDWAREFEATURESENABLEDISABLEREGADDR 0x06  // Hardware feature, enabled or disable: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART, bit 3: RED channel only listen, bit 4: BLUE channel only listen
 
 // Length registers
 #define PUNCHLENGTHREGADDR 0x20	  // Read punch message
@@ -34,10 +35,40 @@ struct Punch I2CSlave_punchToSendBuffer;
 
 uint8_t I2CSlave_PunchLength = sizeof(struct Punch);
 uint8_t I2CSlave_receivedRegister[2];
+uint8_t I2CSlave_hardwareFeaturesAvailable = 0x1F;
+uint8_t I2CSlave_hardwareFeaturesEnableDisable = 0x03;
 uint8_t I2CSlave_serialNumber[4] = {5, 6, 7, 8};
 uint16_t I2CSlave_LastErrorCount = 0;
 uint8_t I2CSlave_TransmitIndex = 0;
 uint8_t I2CSlave_ReceiveIndex = 0;
+
+
+bool IsRedChannelEnabled()
+{
+	return (I2CSlave_hardwareFeaturesEnableDisable & 0x01) > 0;
+}
+
+bool IsBlueChannelEnabled()
+{
+	return (I2CSlave_hardwareFeaturesEnableDisable & 0x02) > 0;
+}
+
+bool IsSendErrorsToUARTEnabled()
+{
+	return (I2CSlave_hardwareFeaturesEnableDisable & 0x04) > 0;
+}
+
+bool IsRedChannelListenOnlyEnabled()
+{
+	return (I2CSlave_hardwareFeaturesEnableDisable & 0x08) > 0;
+}
+
+bool IsBlueChannelListenOnlyEnabled()
+{
+	return (I2CSlave_hardwareFeaturesEnableDisable & 0x10) > 0;
+}
+
+
 
 void I2C_Reset(I2C_HandleTypeDef *hi2c)
 {
@@ -191,17 +222,15 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 			}
 			break;
 		}
-		case HARDWAREFEATURESREGADDR:
+		case HARDWAREFEATURESENABLEDISABLEREGADDR:
 		{
-			uint8_t featuresRegister;
-			if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, &featuresRegister, 1, I2C_FIRST_FRAME)) != HAL_OK)
+			if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, &I2CSlave_hardwareFeaturesEnableDisable, 1, I2C_FIRST_FRAME)) != HAL_OK)
 			{
-				char msg[35];
-				sprintf(msg, "HARDWAREFEATURESREGADDR:ret: %u", status);
+				char msg[46];
+				sprintf(msg, "HARDWAREFEATURESENABLEDISABLEREGADDR:ret: %u", status);
 				ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
 				Error_Handler();
 			}
-			ErrorLog_printErrorsToUARTEnabled = (featuresRegister & 0x04);
 			break;
 		}
 		case SETDATAINDEXREGADDR:
@@ -260,11 +289,21 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 			}
 			case HARDWAREFEATURESREGADDR:
 			{
-				uint8_t hardwareFeatures = I2CSLAVE_REDCHANNELBIT | I2CSLAVE_BLUECHANNELBIT;
-				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &hardwareFeatures, 1, I2C_FIRST_FRAME)) != HAL_OK)
+				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &I2CSlave_hardwareFeaturesAvailable, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
 					char msg[100];
 					sprintf(msg, "HARDWAREFEATURESREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_AddrCallback", msg);
+					Error_Handler();
+				}
+				break;
+			}
+			case HARDWAREFEATURESENABLEDISABLEREGADDR:
+			{
+				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &I2CSlave_hardwareFeaturesEnableDisable, 1, I2C_FIRST_FRAME)) != HAL_OK)
+				{
+					char msg[100];
+					sprintf(msg, "HARDWAREFEATURESENABLEDISABLEREGADDR:ret: %u", status);
 					ErrorLog_log("HAL_I2C_AddrCallback", msg);
 					Error_Handler();
 				}
