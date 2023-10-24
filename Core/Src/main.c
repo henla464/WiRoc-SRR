@@ -956,27 +956,31 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 	{
 		if(GPIO_Pin == GPIO_PIN_12) // PA12 - first CC2500
 		{
-			//HAL_ResumeTick();
-			//SystemClock_Config();
-			struct PortAndPin chipSelectPortPin;
-			chipSelectPortPin.GPIOx = GPIOA;
-			chipSelectPortPin.GPIO_Pin = GPIO_PIN_15;
-			chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
-			chipSelectPortPin.Channel = REDCHANNEL;
+			if (IsRedChannelEnabled()) {
+				//HAL_ResumeTick();
+				//SystemClock_Config();
+				struct PortAndPin chipSelectPortPin;
+				chipSelectPortPin.GPIOx = GPIOA;
+				chipSelectPortPin.GPIO_Pin = GPIO_PIN_15;
+				chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
+				chipSelectPortPin.Channel = REDCHANNEL;
 
-			ReadMessage_RedChannel(&hspi1, &chipSelectPortPin);
+				ReadMessage_RedChannel(&hspi1, &chipSelectPortPin);
+			}
 		}
 		else if(GPIO_Pin == GPIO_PIN_6) // PA6 - second CC2500
 		{
-			//HAL_ResumeTick();
-			//SystemClock_Config();
-			struct PortAndPin chipSelectPortPin;
-			chipSelectPortPin.GPIOx = GPIOA;
-			chipSelectPortPin.GPIO_Pin = GPIO_PIN_5;
-			chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
-			chipSelectPortPin.Channel = BLUECHANNEL;
+			if (IsBlueChannelEnabled()) {
+				//HAL_ResumeTick();
+				//SystemClock_Config();
+				struct PortAndPin chipSelectPortPin;
+				chipSelectPortPin.GPIOx = GPIOA;
+				chipSelectPortPin.GPIO_Pin = GPIO_PIN_5;
+				chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
+				chipSelectPortPin.Channel = BLUECHANNEL;
 
-			ReadMessage_BlueChannel(&hspi2, &chipSelectPortPin);
+				ReadMessage_BlueChannel(&hspi2, &chipSelectPortPin);
+			}
 		}
 	}
 }
@@ -987,27 +991,31 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 	{
 		if(GPIO_Pin == GPIO_PIN_12) // PA12 - first CC2500
 		{
-			//HAL_ResumeTick();
-			//SystemClock_Config();
-			struct PortAndPin chipSelectPortPin;
-			chipSelectPortPin.GPIOx = GPIOA;
-			chipSelectPortPin.GPIO_Pin = GPIO_PIN_15;
-			chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
-			chipSelectPortPin.Channel = REDCHANNEL;
+			if (IsRedChannelEnabled()) {
+				//HAL_ResumeTick();
+				//SystemClock_Config();
+				struct PortAndPin chipSelectPortPin;
+				chipSelectPortPin.GPIOx = GPIOA;
+				chipSelectPortPin.GPIO_Pin = GPIO_PIN_15;
+				chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
+				chipSelectPortPin.Channel = REDCHANNEL;
 
-			AckSentEnableRX_RedChannel(&hspi1, &chipSelectPortPin);
+				AckSentEnableRX_RedChannel(&hspi1, &chipSelectPortPin);
+			}
 		}
 		else if(GPIO_Pin == GPIO_PIN_6) // PA6 - second CC2500
 		{
-			//HAL_ResumeTick();
-			//SystemClock_Config();
-			struct PortAndPin chipSelectPortPin;
-			chipSelectPortPin.GPIOx = GPIOA;
-			chipSelectPortPin.GPIO_Pin = GPIO_PIN_5;
-			chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
-			chipSelectPortPin.Channel = BLUECHANNEL;
+			if (IsBlueChannelEnabled()) {
+				//HAL_ResumeTick();
+				//SystemClock_Config();
+				struct PortAndPin chipSelectPortPin;
+				chipSelectPortPin.GPIOx = GPIOA;
+				chipSelectPortPin.GPIO_Pin = GPIO_PIN_5;
+				chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
+				chipSelectPortPin.Channel = BLUECHANNEL;
 
-			AckSentEnableRX_BlueChannel(&hspi2, &chipSelectPortPin);
+				AckSentEnableRX_BlueChannel(&hspi2, &chipSelectPortPin);
+			}
 		}
 	}
 }
