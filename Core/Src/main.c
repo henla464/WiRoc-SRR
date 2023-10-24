@@ -73,10 +73,10 @@ static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
 static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPin ,uint8_t channel);
 static uint8_t GetPunchReplyIncludingSpaceForCommandByte(struct Punch punch, uint8_t * punchReply);
-static void AckSentEnableRX_RedChannel(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPin);
-static void AckSentEnableRX_BlueChannel(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPin);
-static void SendAckReply_RedChannel(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin);
-static void SendAckReply_BlueChannel(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin);
+static void AckSentEnableRX_RedChannel();
+static void AckSentEnableRX_BlueChannel();
+static void SendAckReply_RedChannel();
+static void SendAckReply_BlueChannel();
 static bool EnableI2CListen();
 
 /* USER CODE END PFP */
@@ -839,9 +839,9 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 	return true;
 }
 
-static void ReadMessage_RedChannel(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin)
+static void ReadMessage_RedChannel()
 {
-	if (!ReadMessage(phspi, chipSelectPortPin))
+	if (!ReadMessage(&hspi1, &RedChannelChipSelectPortPin))
 	{
 		return;
 	}
@@ -849,12 +849,12 @@ static void ReadMessage_RedChannel(SPI_HandleTypeDef* phspi, struct PortAndPin *
 	{
 		return;
 	}
-	SendAckReply_RedChannel(phspi, chipSelectPortPin);
+	SendAckReply_RedChannel();
 }
 
-static void ReadMessage_BlueChannel(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin)
+static void ReadMessage_BlueChannel()
 {
-	if (!ReadMessage(phspi, chipSelectPortPin))
+	if (!ReadMessage(&hspi2, &BlueChannelChipSelectPortPin))
 	{
 		return;
 	}
@@ -862,92 +862,92 @@ static void ReadMessage_BlueChannel(SPI_HandleTypeDef* phspi, struct PortAndPin 
 	{
 		return;
 	}
-	SendAckReply_BlueChannel(phspi, chipSelectPortPin);
+	SendAckReply_BlueChannel();
 }
 
 
-static void SendAckReply_RedChannel(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin)
+static void SendAckReply_RedChannel()
 {
-	CC2500_ExitRXTX(phspi, chipSelectPortPin);
+	CC2500_ExitRXTX(&hspi1, &RedChannelChipSelectPortPin);
 	do {
-	} while (!CC2500_GetIsReadyAndIdle(phspi, chipSelectPortPin));  // while not chip ready and IDLE
-	CC2500_FlushRXFIFO(phspi, chipSelectPortPin);
+	} while (!CC2500_GetIsReadyAndIdle(&hspi1, &RedChannelChipSelectPortPin));  // while not chip ready and IDLE
+	CC2500_FlushRXFIFO(&hspi1, &RedChannelChipSelectPortPin);
 
 
 	uint8_t replyLength = GetPunchReplyIncludingSpaceForCommandByte(punch, PunchReply);
-	CC2500_WriteTXFifo(phspi, chipSelectPortPin, PunchReply, replyLength);
+	CC2500_WriteTXFifo(&hspi1, &RedChannelChipSelectPortPin, PunchReply, replyLength);
 
 	// Disable interrupt, change GDO0 to PA_PD
 	Configure_GDO_INT_1_AsGPIO();
-	CC2500_SetGDO0OutputPinConfiguration(phspi, chipSelectPortPin, GDOx_CFG_PA_PD);
+	CC2500_SetGDO0OutputPinConfiguration(&hspi1, &RedChannelChipSelectPortPin, GDOx_CFG_PA_PD);
 
-	CC2500_EnableRX(phspi, chipSelectPortPin);
+	CC2500_EnableRX(&hspi1, &RedChannelChipSelectPortPin);
 
 	uint8_t packetStatus;
 	do {
 		//for(int i=0;i<2000;i++); // add a abit of delay here?
-		packetStatus = CC2500_GetGDOxStatusAndPacketStatus(phspi, chipSelectPortPin);
+		packetStatus = CC2500_GetGDOxStatusAndPacketStatus(&hspi1, &RedChannelChipSelectPortPin);
 	} while (!(packetStatus & 0x10)); // wait for channel clear
 
 	// Enable rising interrupts for CC2500-GDO0
 	Configure_GDO_INT_1_AsRisingInterrupt();
-	HAL_NVIC_EnableIRQ(chipSelectPortPin->InterruptIRQ);
+	HAL_NVIC_EnableIRQ(RedChannelChipSelectPortPin.InterruptIRQ);
 
-	CC2500_EnableTX(phspi, chipSelectPortPin);
+	CC2500_EnableTX(&hspi1, &RedChannelChipSelectPortPin);
 }
 
-static void SendAckReply_BlueChannel(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin)
+static void SendAckReply_BlueChannel()
 {
-	CC2500_ExitRXTX(phspi, chipSelectPortPin);
+	CC2500_ExitRXTX(&hspi2, &BlueChannelChipSelectPortPin);
 	do {
-	} while (!CC2500_GetIsReadyAndIdle(phspi, chipSelectPortPin));  // while not chip ready and IDLE
-	CC2500_FlushRXFIFO(phspi, chipSelectPortPin);
+	} while (!CC2500_GetIsReadyAndIdle(&hspi2, &BlueChannelChipSelectPortPin));  // while not chip ready and IDLE
+	CC2500_FlushRXFIFO(&hspi2, &BlueChannelChipSelectPortPin);
 
 
 	uint8_t replyLength = GetPunchReplyIncludingSpaceForCommandByte(punch, PunchReply);
-	CC2500_WriteTXFifo(phspi, chipSelectPortPin, PunchReply, replyLength);
+	CC2500_WriteTXFifo(&hspi2, &BlueChannelChipSelectPortPin, PunchReply, replyLength);
 
 	// Disable interrupt, change GDO0 to PA_PD
 	Configure_GDO_INT_2_AsGPIO();
-	CC2500_SetGDO0OutputPinConfiguration(phspi, chipSelectPortPin, GDOx_CFG_PA_PD);
+	CC2500_SetGDO0OutputPinConfiguration(&hspi2, &BlueChannelChipSelectPortPin, GDOx_CFG_PA_PD);
 
-	CC2500_EnableRX(phspi, chipSelectPortPin);
+	CC2500_EnableRX(&hspi2, &BlueChannelChipSelectPortPin);
 
 	uint8_t packetStatus;
 	do {
 		//for(int i=0;i<2000;i++); // add a abit of delay here?
-		packetStatus = CC2500_GetGDOxStatusAndPacketStatus(phspi, chipSelectPortPin);
+		packetStatus = CC2500_GetGDOxStatusAndPacketStatus(&hspi2, &BlueChannelChipSelectPortPin);
 	} while (!(packetStatus & 0x10)); // wait for channel clear
 
 	// Enable rising interrupts for CC2500-GDO0
 	Configure_GDO_INT_2_AsRisingInterrupt();
-	HAL_NVIC_EnableIRQ(chipSelectPortPin->InterruptIRQ);
+	HAL_NVIC_EnableIRQ(BlueChannelChipSelectPortPin.InterruptIRQ);
 
-	CC2500_EnableTX(phspi, chipSelectPortPin);
+	CC2500_EnableTX(&hspi2, &BlueChannelChipSelectPortPin);
 }
 
-static void AckSentEnableRX_RedChannel(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin)
+static void AckSentEnableRX_RedChannel()
 {
 	// must be in idle, but is probably in RX now...
-	CC2500_FlushTXFIFO(phspi, chipSelectPortPin);
+	CC2500_FlushTXFIFO(&hspi1, &RedChannelChipSelectPortPin);
 	Configure_GDO_INT_1_AsGPIO();
-	CC2500_SetGDO0OutputPinConfiguration(phspi, chipSelectPortPin, GDOx_CFG_ASSERT_SYNC_WORD);
+	CC2500_SetGDO0OutputPinConfiguration(&hspi1, &RedChannelChipSelectPortPin, GDOx_CFG_ASSERT_SYNC_WORD);
 	//Configure_GDO0 as falling interrupt
 	Configure_GDO_INT_1_AsFallingInterrupt();
-	HAL_NVIC_EnableIRQ(chipSelectPortPin->InterruptIRQ);
-	CC2500_EnableRX(phspi, chipSelectPortPin);
+	HAL_NVIC_EnableIRQ(RedChannelChipSelectPortPin.InterruptIRQ);
+	CC2500_EnableRX(&hspi1, &RedChannelChipSelectPortPin);
 }
 
-static void AckSentEnableRX_BlueChannel(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin)
+static void AckSentEnableRX_BlueChannel()
 {
 	// must be in idle, but is probably in RX now...
-	CC2500_FlushTXFIFO(phspi, chipSelectPortPin);
+	CC2500_FlushTXFIFO(&hspi2, &BlueChannelChipSelectPortPin);
 	Configure_GDO_INT_2_AsGPIO();
-	CC2500_SetGDO0OutputPinConfiguration(phspi, chipSelectPortPin, GDOx_CFG_ASSERT_SYNC_WORD);
+	CC2500_SetGDO0OutputPinConfiguration(&hspi2, &BlueChannelChipSelectPortPin, GDOx_CFG_ASSERT_SYNC_WORD);
 	//Configure_GDO0 as falling interrupt
 	Configure_GDO_INT_2_AsFallingInterrupt();
-	HAL_NVIC_EnableIRQ(chipSelectPortPin->InterruptIRQ);
-	CC2500_EnableRX(phspi, chipSelectPortPin);
+	HAL_NVIC_EnableIRQ(BlueChannelChipSelectPortPin.InterruptIRQ);
+	CC2500_EnableRX(&hspi2, &BlueChannelChipSelectPortPin);
 }
 
 void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
@@ -959,13 +959,7 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 			if (IsRedChannelEnabled()) {
 				//HAL_ResumeTick();
 				//SystemClock_Config();
-				struct PortAndPin chipSelectPortPin;
-				chipSelectPortPin.GPIOx = GPIOA;
-				chipSelectPortPin.GPIO_Pin = GPIO_PIN_15;
-				chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
-				chipSelectPortPin.Channel = REDCHANNEL;
-
-				ReadMessage_RedChannel(&hspi1, &chipSelectPortPin);
+				ReadMessage_RedChannel();
 			}
 		}
 		else if(GPIO_Pin == GPIO_PIN_6) // PA6 - second CC2500
@@ -973,13 +967,7 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 			if (IsBlueChannelEnabled()) {
 				//HAL_ResumeTick();
 				//SystemClock_Config();
-				struct PortAndPin chipSelectPortPin;
-				chipSelectPortPin.GPIOx = GPIOA;
-				chipSelectPortPin.GPIO_Pin = GPIO_PIN_5;
-				chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
-				chipSelectPortPin.Channel = BLUECHANNEL;
-
-				ReadMessage_BlueChannel(&hspi2, &chipSelectPortPin);
+				ReadMessage_BlueChannel();
 			}
 		}
 	}
@@ -994,13 +982,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 			if (IsRedChannelEnabled()) {
 				//HAL_ResumeTick();
 				//SystemClock_Config();
-				struct PortAndPin chipSelectPortPin;
-				chipSelectPortPin.GPIOx = GPIOA;
-				chipSelectPortPin.GPIO_Pin = GPIO_PIN_15;
-				chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
-				chipSelectPortPin.Channel = REDCHANNEL;
-
-				AckSentEnableRX_RedChannel(&hspi1, &chipSelectPortPin);
+				AckSentEnableRX_RedChannel();
 			}
 		}
 		else if(GPIO_Pin == GPIO_PIN_6) // PA6 - second CC2500
@@ -1008,13 +990,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 			if (IsBlueChannelEnabled()) {
 				//HAL_ResumeTick();
 				//SystemClock_Config();
-				struct PortAndPin chipSelectPortPin;
-				chipSelectPortPin.GPIOx = GPIOA;
-				chipSelectPortPin.GPIO_Pin = GPIO_PIN_5;
-				chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
-				chipSelectPortPin.Channel = BLUECHANNEL;
-
-				AckSentEnableRX_BlueChannel(&hspi2, &chipSelectPortPin);
+				AckSentEnableRX_BlueChannel();
 			}
 		}
 	}
