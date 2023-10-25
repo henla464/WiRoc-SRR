@@ -41,7 +41,7 @@ uint8_t I2CSlave_serialNumber[4] = {5, 6, 7, 8};
 uint16_t I2CSlave_LastErrorCount = 0;
 uint8_t I2CSlave_TransmitIndex = 0;
 uint8_t I2CSlave_ReceiveIndex = 0;
-
+bool channelConfigurationChanged = false;
 
 bool IsRedChannelEnabled()
 {
@@ -68,6 +68,15 @@ bool IsBlueChannelListenOnlyEnabled()
 	return (I2CSlave_hardwareFeaturesEnableDisable & 0x10) > 0;
 }
 
+bool HasChannelConfigurationChanged()
+{
+	return channelConfigurationChanged;
+}
+
+void ClearHasChannelConfigurationChanged()
+{
+	channelConfigurationChanged = false;
+}
 
 
 void I2C_Reset(I2C_HandleTypeDef *hi2c)

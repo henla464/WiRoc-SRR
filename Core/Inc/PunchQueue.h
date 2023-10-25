@@ -13,6 +13,9 @@
 
 #define PUNCHQUEUE_SIZE 6
 #define PUNCH_LENGTH 30
+#define QUEUEISFULL 1
+#define SAMEPUNCH 2
+#define ENQUEUESUCCESS 0
 
 extern int8_t PunchQueue_front;
 extern int8_t PunchQueue_rear;
@@ -42,7 +45,7 @@ extern struct PunchQueue incomingPunchQueue;
 uint8_t PunchQueue_getNoOfItems();
 bool PunchQueue_isFull(struct PunchQueue * queue);
 bool PunchQueue_isEmpty(struct PunchQueue * queue);
-bool PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch);
+uint8_t PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch);
 bool PunchQueue_deQueue(struct PunchQueue * queue, struct Punch * punch);
 bool PunchQueue_peek(struct PunchQueue * queue, struct Punch * punch, struct Punch ** punchID);
 bool PunchQueue_pop(struct PunchQueue * queue);

@@ -14,6 +14,7 @@
   * If no LICENSE file comes with this software, it is provided AS-IS.
   *
   ******************************************************************************
+  ******************************************************************************
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
@@ -71,13 +72,14 @@ static void MX_I2C1_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
+static void ConfigureCC2500(void);
 static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPin ,uint8_t channel);
 static uint8_t GetPunchReplyIncludingSpaceForCommandByte(struct Punch punch, uint8_t * punchReply);
-static void AckSentEnableRX_RedChannel();
-static void AckSentEnableRX_BlueChannel();
-static void SendAckReply_RedChannel();
-static void SendAckReply_BlueChannel();
-static bool EnableI2CListen();
+static void AckSentEnableRX_RedChannel(void);
+static void AckSentEnableRX_BlueChannel(void);
+static void SendAckReply_RedChannel(void);
+static void SendAckReply_BlueChannel(void);
+static bool EnableI2CListen(void);
 
 /* USER CODE END PFP */
 
@@ -101,6 +103,16 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
+  RedChannelChipSelectPortPin.GPIOx = GPIOA;
+  RedChannelChipSelectPortPin.GPIO_Pin = GPIO_PIN_15;
+  RedChannelChipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
+  RedChannelChipSelectPortPin.Channel = REDCHANNEL;
+
+  BlueChannelChipSelectPortPin.GPIOx = GPIOA;
+  BlueChannelChipSelectPortPin.GPIO_Pin = GPIO_PIN_5;
+  BlueChannelChipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
+  BlueChannelChipSelectPortPin.Channel = BLUECHANNEL;
+
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -116,15 +128,9 @@ int main(void)
   MX_SPI1_Init();
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
-  RedChannelChipSelectPortPin.GPIOx = GPIOA;
-  RedChannelChipSelectPortPin.GPIO_Pin = GPIO_PIN_15;
-  RedChannelChipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
-  RedChannelChipSelectPortPin.Channel = REDCHANNEL;
 
-  BlueChannelChipSelectPortPin.GPIOx = GPIOA;
-  BlueChannelChipSelectPortPin.GPIO_Pin = GPIO_PIN_5;
-  BlueChannelChipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
-  BlueChannelChipSelectPortPin.Channel = BLUECHANNEL;
+  // Configure the RED and BLUE Channel. If a channel should not be enabled then put the corresponding CC2500 into sleep mode.
+  ConfigureCC2500();
 
   HAL_Delay(1);
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
@@ -149,22 +155,6 @@ int main(void)
   HAL_Delay(1);
   isInitialized = true;
 
-  // If a channel should not be enabled then put the corresponding CC2500 into sleep mode.
-  if (!IsRedChannelEnabled())
-  {
-	CC2500_ExitRXTX(&hspi1, &RedChannelChipSelectPortPin);
-	do {
-	} while (!CC2500_GetIsReadyAndIdle(&hspi1, &RedChannelChipSelectPortPin));  // while not chip ready and IDLE
-	CC2500_PowerDown(&hspi1, &RedChannelChipSelectPortPin);
-  }
-  if (!IsBlueChannelEnabled())
-  {
-	  CC2500_ExitRXTX(&hspi2, &BlueChannelChipSelectPortPin);
-	  do {
-	  } while (!CC2500_GetIsReadyAndIdle(&hspi2, &BlueChannelChipSelectPortPin));  // while not chip ready and IDLE
-	  CC2500_PowerDown(&hspi2, &BlueChannelChipSelectPortPin);
-  }
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -186,6 +176,12 @@ int main(void)
 	  }
 
 	  HAL_Delay(1);
+
+	  if (HasChannelConfigurationChanged())
+	  {
+		  ConfigureCC2500();
+		  ClearHasChannelConfigurationChanged();
+	  }
 
 	  // go to sleep
 	  //HAL_SuspendTick();
@@ -355,13 +351,7 @@ static void MX_SPI1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN SPI1_Init 2 */
-  struct PortAndPin chipSelectPortPin;
-  chipSelectPortPin.GPIOx = GPIOA;
-  chipSelectPortPin.GPIO_Pin = GPIO_PIN_15;
-  chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
-  chipSelectPortPin.Channel = REDCHANNEL;
-
-  InitCC2500(&hspi1, &chipSelectPortPin, REDCHANNEL);
+  InitCC2500(&hspi1, &RedChannelChipSelectPortPin, REDCHANNEL);
   /* USER CODE END SPI1_Init 2 */
 
 }
@@ -401,14 +391,7 @@ static void MX_SPI2_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN SPI2_Init 2 */
-  struct PortAndPin chipSelectPortPin;
-  chipSelectPortPin.GPIOx = GPIOA;
-  chipSelectPortPin.GPIO_Pin = GPIO_PIN_5;
-  chipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
-  chipSelectPortPin.Channel = BLUECHANNEL;
-
-
-  InitCC2500(&hspi2, &chipSelectPortPin, BLUECHANNEL);
+  InitCC2500(&hspi2, &BlueChannelChipSelectPortPin, BLUECHANNEL);
   /* USER CODE END SPI2_Init 2 */
 
 }
@@ -639,6 +622,37 @@ static void Configure_GDO_INT_2_AsGPIO()
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 }
 
+static void ConfigureCC2500() {
+	if (IsRedChannelEnabled())
+	{
+		InitCC2500(&hspi1, &RedChannelChipSelectPortPin, REDCHANNEL);
+	}
+	else
+	{
+		CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
+		HAL_Delay(1);
+		CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
+		HAL_Delay(1);
+		do {
+		} while (!CC2500_GetIsReadyAndIdle(&hspi1, &RedChannelChipSelectPortPin));  // while not chip ready and IDLE
+		CC2500_PowerDown(&hspi1, &RedChannelChipSelectPortPin);
+	}
+
+	if (IsBlueChannelEnabled())
+	{
+		InitCC2500(&hspi1, &BlueChannelChipSelectPortPin, BLUECHANNEL);
+	}
+	else
+	{
+		CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
+		HAL_Delay(1);
+		CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
+		HAL_Delay(1);
+		do {
+		} while (!CC2500_GetIsReadyAndIdle(&hspi2, &BlueChannelChipSelectPortPin));  // while not chip ready and IDLE
+		CC2500_PowerDown(&hspi2, &BlueChannelChipSelectPortPin);
+	}
+}
 
 static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin, uint8_t channel)
 {
@@ -819,12 +833,14 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 		{
 			// CRC OK
 			punch.channel = chipSelectPortPin->Channel;
-			if (!PunchQueue_enQueue(&incomingPunchQueue, &punch))  // full OR same punch previous. Should separate these cases
+			uint8_t enqueueResult = PunchQueue_enQueue(&incomingPunchQueue, &punch);
+			if (enqueueResult == QUEUEISFULL)
 			{
 				// queue full so don't ack
 				ErrorLog_log("ReadMessage", "Queue full");
 				return false;
 			}
+			// when enqueueResult is  ENQUEUESUCCESS or SAMEPUNCH then punch should be acked (unless in listen only mode)
 		} else {
 			return false;
 		}
