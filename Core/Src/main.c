@@ -351,7 +351,6 @@ static void MX_SPI1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN SPI1_Init 2 */
-  InitCC2500(&hspi1, &RedChannelChipSelectPortPin, REDCHANNEL);
   /* USER CODE END SPI1_Init 2 */
 
 }
@@ -391,7 +390,6 @@ static void MX_SPI2_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN SPI2_Init 2 */
-  InitCC2500(&hspi2, &BlueChannelChipSelectPortPin, BLUECHANNEL);
   /* USER CODE END SPI2_Init 2 */
 
 }
