@@ -56,9 +56,8 @@ SPI_HandleTypeDef hspi2;
 
 UART_HandleTypeDef huart1;
 
-bool isInitialized = false;
 /* USER CODE BEGIN PV */
-
+bool isInitialized = false;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -158,6 +157,13 @@ int main(void)
 	  }
 
 	  HAL_Delay(1);
+
+	  // go to sleep
+	  //HAL_SuspendTick();
+	  //HAL_PWR_EnableSleepOnExit();
+	  //HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+	  //HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+	  //HAL_ResumeTick();
 
 	  /*
 	  if (PunchQueue_isFull())
@@ -439,14 +445,35 @@ static void MX_GPIO_Init(void)
   GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5|GPIO_PIN_15, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : PB9 PB0 PB2 PB8 */
+  GPIO_InitStruct.Pin = GPIO_PIN_9|GPIO_PIN_0|GPIO_PIN_2|GPIO_PIN_8;
+  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PC14 PC15 PC6 */
+  GPIO_InitStruct.Pin = GPIO_PIN_14|GPIO_PIN_15|GPIO_PIN_6;
+  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PA1 PA2 PA7 PA8
+                           PA11 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_7|GPIO_PIN_8
+                          |GPIO_PIN_11;
+  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PA5 PA15 */
   GPIO_InitStruct.Pin = GPIO_PIN_5|GPIO_PIN_15;
@@ -762,7 +789,7 @@ static void ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 		{
 			// CRC OK
 			punch.channel = chipSelectPortPin->Channel;
-			if (!PunchQueue_enQueue(&incomingPunchQueue, &punch))
+			if (!PunchQueue_enQueue(&incomingPunchQueue, &punch))  // full OR same punch previous. Should separate these cases
 			{
 				// queue full so don't ack
 				ErrorLog_log("ReadMessage", "Queue full");
@@ -841,6 +868,8 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 	{
 		if(GPIO_Pin == GPIO_PIN_12) // PA12 - first CC2500
 		{
+			//HAL_ResumeTick();
+			//SystemClock_Config();
 			struct PortAndPin chipSelectPortPin;
 			chipSelectPortPin.GPIOx = GPIOA;
 			chipSelectPortPin.GPIO_Pin = GPIO_PIN_15;
@@ -851,6 +880,8 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 		}
 		else if(GPIO_Pin == GPIO_PIN_6) // PA6 - second CC2500
 		{
+			//HAL_ResumeTick();
+			//SystemClock_Config();
 			struct PortAndPin chipSelectPortPin;
 			chipSelectPortPin.GPIOx = GPIOA;
 			chipSelectPortPin.GPIO_Pin = GPIO_PIN_5;
@@ -868,6 +899,8 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 	{
 		if(GPIO_Pin == GPIO_PIN_12) // PA12 - first CC2500
 		{
+			//HAL_ResumeTick();
+			//SystemClock_Config();
 			struct PortAndPin chipSelectPortPin;
 			chipSelectPortPin.GPIOx = GPIOA;
 			chipSelectPortPin.GPIO_Pin = GPIO_PIN_15;
@@ -877,6 +910,8 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 		}
 		else if(GPIO_Pin == GPIO_PIN_6) // PA6 - second CC2500
 		{
+			//HAL_ResumeTick();
+			//SystemClock_Config();
 			struct PortAndPin chipSelectPortPin;
 			chipSelectPortPin.GPIOx = GPIOA;
 			chipSelectPortPin.GPIO_Pin = GPIO_PIN_5;
