@@ -51,11 +51,11 @@ bool PunchQueue_isEmpty(struct PunchQueue * queue)
 }
 
 
-bool PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch)
+uint8_t PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch)
 {
 	if (PunchQueue_isFull(queue))
 	{
-		return false;
+		return QUEUEISFULL;
 	}
 	else
 	{
@@ -67,7 +67,7 @@ bool PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch)
 				punch->payload[11] == queue->PunchQueue_items[queue->PunchQueue_rear].payload[11] )
 		{
 			// Same punch as previously received
-			return false;
+			return SAMEPUNCH;
 		}
 		if (queue->PunchQueue_front == -1)
 		{
@@ -76,7 +76,7 @@ bool PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch)
 		queue->PunchQueue_rear = (queue->PunchQueue_rear + 1) % PUNCHQUEUE_SIZE;
 		queue->PunchQueue_items[queue->PunchQueue_rear] = *punch;
 		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
-		return true;
+		return ENQUEUESUCCESS;
 	}
 }
 

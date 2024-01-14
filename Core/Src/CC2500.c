@@ -269,6 +269,11 @@ void CC2500_ExitRXTX(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin)
 	CC2500_WriteByteSPI(hspi, chipSelectPin, 0x36);
 }
 
+void CC2500_PowerDown(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin)
+{
+	CC2500_WriteByteSPI(hspi, chipSelectPin, 0x39);
+}
+
 void CC2500_FlushRXFIFO(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin)
 {
 	CC2500_WriteByteSPI(hspi, chipSelectPin, 0x3A);

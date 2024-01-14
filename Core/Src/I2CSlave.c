@@ -20,7 +20,7 @@
 #define ERRORCOUNTREGADDR 0x03  // Serialno of the dongle
 #define STATUSREGADDR 0x04	  // Indicates what messages there is to fetch. bit 7: Error message, bit 0: Punch message
 #define SETDATAINDEXREGADDR 0x05  // Index to the block data a register
-#define HARDWAREFEATURESENABLEDISABLEREGADDR 0x06  // Hardware features available: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART, bit 3: RED channel only listen, bit 4: BLUE channel only listen
+#define HARDWAREFEATURESENABLEDISABLEREGADDR 0x06  // Hardware feature, enabled or disable: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART, bit 3: RED channel only listen, bit 4: BLUE channel only listen
 
 // Length registers
 #define PUNCHLENGTHREGADDR 0x20	  // Read punch message
@@ -41,6 +41,43 @@ uint8_t I2CSlave_serialNumber[4] = {5, 6, 7, 8};
 uint16_t I2CSlave_LastErrorCount = 0;
 uint8_t I2CSlave_TransmitIndex = 0;
 uint8_t I2CSlave_ReceiveIndex = 0;
+bool channelConfigurationChanged = false;
+
+bool IsRedChannelEnabled()
+{
+	return (I2CSlave_hardwareFeaturesEnableDisable & 0x01) > 0;
+}
+
+bool IsBlueChannelEnabled()
+{
+	return (I2CSlave_hardwareFeaturesEnableDisable & 0x02) > 0;
+}
+
+bool IsSendErrorsToUARTEnabled()
+{
+	return (I2CSlave_hardwareFeaturesEnableDisable & 0x04) > 0;
+}
+
+bool IsRedChannelListenOnlyEnabled()
+{
+	return (I2CSlave_hardwareFeaturesEnableDisable & 0x08) > 0;
+}
+
+bool IsBlueChannelListenOnlyEnabled()
+{
+	return (I2CSlave_hardwareFeaturesEnableDisable & 0x10) > 0;
+}
+
+bool HasChannelConfigurationChanged()
+{
+	return channelConfigurationChanged;
+}
+
+void ClearHasChannelConfigurationChanged()
+{
+	channelConfigurationChanged = false;
+}
+
 
 void I2C_Reset(I2C_HandleTypeDef *hi2c)
 {
@@ -203,7 +240,10 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 				ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
 				Error_Handler();
 			}
+<<<<<<< HEAD
 			ErrorLog_printErrorsToUARTEnabled = (I2CSlave_hardwareFeaturesEnableDisable & 0x04);
+=======
+>>>>>>> abbae6d0d404fcaae67b2a0e724ed29ea6095800
 			break;
 		}
 		case SETDATAINDEXREGADDR:

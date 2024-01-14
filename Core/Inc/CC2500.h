@@ -146,6 +146,7 @@ void CC2500_SetTest2(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin,
 void CC2500_SetTest1(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t data);
 void CC2500_SetTest0(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t data);
 void CC2500_ExitRXTX(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin);
+void CC2500_PowerDown(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin);
 uint8_t CC2500_GetStatusByteWrite(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin);
 uint8_t CC2500_GetStatusByteRead(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin);
 void CC2500_FlushRXFIFO(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin);
