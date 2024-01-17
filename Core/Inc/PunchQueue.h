@@ -10,12 +10,20 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include "stm32g0xx_hal.h"
+#include "IRQLineHandler.h"
 
 #define PUNCHQUEUE_SIZE 6
-#define PUNCH_LENGTH 30
+#define PUNCH_LENGTH_STATION 30
+#define PUNCH_LENGTH_AIR_PLUS_LAST_MESSAGE 25
+#define PUNCH_LENGTH_AIR_PLUS_MULTIPLE_MESSAGES 27  // when SI card sends all or all unsent punches
 #define QUEUEISFULL 1
 #define SAMEPUNCH 2
 #define ENQUEUESUCCESS 0
+
+#define PUNCHTYPE_INDEX_PAYLOAD 14
+#define PUNCHTYPE_STATION 0xb6
+#define PUNCHTYPE_AIR_PLUS_LAST_MESSAGE 0xb1
+#define PUNCHTYPE_AIR_PLUS_MULTIPLE_MESSAGES 0xb7
 
 extern int8_t PunchQueue_front;
 extern int8_t PunchQueue_rear;
@@ -28,7 +36,7 @@ struct MessageStatus {
 
 struct Punch {
   uint8_t payloadLength;
-  uint8_t payload[PUNCH_LENGTH];
+  uint8_t payload[PUNCH_LENGTH_STATION];
   struct MessageStatus messageStatus;
   uint8_t channel;
 };
@@ -45,9 +53,10 @@ extern struct PunchQueue incomingPunchQueue;
 uint8_t PunchQueue_getNoOfItems();
 bool PunchQueue_isFull(struct PunchQueue * queue);
 bool PunchQueue_isEmpty(struct PunchQueue * queue);
+bool PunchQueue_isSamePunch(struct Punch * punch1, struct Punch * punch2);
 uint8_t PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch);
 bool PunchQueue_deQueue(struct PunchQueue * queue, struct Punch * punch);
-bool PunchQueue_peek(struct PunchQueue * queue, struct Punch * punch, struct Punch ** punchID);
+bool PunchQueue_peek(struct PunchQueue * queue, struct Punch * punch);
 bool PunchQueue_pop(struct PunchQueue * queue);
 bool PunchQueue_popSafe(struct PunchQueue * queue, struct Punch * punchID);
 

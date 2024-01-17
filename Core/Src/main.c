@@ -637,7 +637,7 @@ static void ConfigureCC2500() {
 
 	if (IsBlueChannelEnabled())
 	{
-		InitCC2500(&hspi1, &BlueChannelChipSelectPortPin, BLUECHANNEL);
+		InitCC2500(&hspi2, &BlueChannelChipSelectPortPin, BLUECHANNEL);
 	}
 	else
 	{
@@ -778,7 +778,7 @@ static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectP
 }
 
 uint8_t PunchReplySequenceNo = 1;
-uint8_t PunchReply[] = {0x00, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3F, 0x23, 0x00, 0x73, 0x60};
+uint8_t PunchReply[] = {0x00, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3F, 0x23, 0x00, 0x73, 0x60}; // first byte is SPI header byte
 static uint8_t GetPunchReplyIncludingSpaceForCommandByte(struct Punch punch, uint8_t * punchReply)
 {
 	punchReply[2] = punch.payload[4]; 	// station serialno
@@ -814,21 +814,25 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 		return false;
 	}
 
-	if (noOfRxBytes2 >= punch.payloadLength + 3 && punch.payloadLength <= sizeof(punch.payload))
+	uint8_t headerLength = 1; // the length byte
+	uint8_t footerLength = 2; // the rssi and crc/link quality bytes
+	uint8_t lengthOfMessageReceived = punch.payloadLength + headerLength + footerLength;
+	if (noOfRxBytes2 >= lengthOfMessageReceived && punch.payloadLength <= sizeof(punch.payload))
 	{
+		// Full message received, and it fits into the punch.payload array!
 		if (!CC2500_ReadRXFifo(phspi, chipSelectPortPin, punch.payload, punch.payloadLength))
 		{
 			ErrorLog_log("ReadMessage", "CC2500_ReadRXFifo ret false (2)");
 			return false;
 		}
-		if (!CC2500_ReadRXFifo(phspi, chipSelectPortPin, (uint8_t *)&punch.messageStatus, 2))
+		if (!CC2500_ReadRXFifo(phspi, chipSelectPortPin, (uint8_t *)&punch.messageStatus, footerLength))
 		{
 			ErrorLog_log("ReadMessage", "CC2500_ReadRXFifo ret false (3)");
 			return false;
 		}
 		if (punch.messageStatus.crc & 0x80)
 		{
-			// CRC OK
+			// CRC OK!
 			punch.channel = chipSelectPortPin->Channel;
 			uint8_t enqueueResult = PunchQueue_enQueue(&incomingPunchQueue, &punch);
 			if (enqueueResult == QUEUEISFULL)

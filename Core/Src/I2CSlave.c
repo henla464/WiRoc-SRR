@@ -12,15 +12,20 @@
 #define I2CSLAVE_FIRMWAREVERSION 1
 #define I2CSLAVE_REDCHANNELBIT  0b00000001
 #define I2CSLAVE_BLUECHANNELBIT 0b00000010
+#define I2CSLAVE_UARTERRORBIT 0b00000100
+#define I2CSLAVE_REDCHANNELLISTENONLYBIT 0b00001000
+#define I2CSLAVE_BLUECHANNELLISTENONLYBIT 0b00010000
+#define I2CSLAVE_SENDMODEBIT 0b00100000
+
 
 /*## REGISTER ADDRESSES ##*/
-#define FIRMWAREVERSIONREGADDR 0x00   // Version of the firware
-#define HARDWAREFEATURESREGADDR 0x01  // Hardware features available: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART, bit 3: RED channel only listen, bit 4: BLUE channel only listen
+#define FIRMWAREVERSIONREGADDR 0x00   // Version of the firmware
+#define HARDWAREFEATURESREGADDR 0x01  // Hardware features available: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART, bit 3: RED channel only listen, bit 4: BLUE channel only listen, bit 5: Send mode
 #define SERIALNOREGADDR 0x02  // Serialno of the dongle
-#define ERRORCOUNTREGADDR 0x03  // Serialno of the dongle
+#define ERRORCOUNTREGADDR 0x03  // No of errors
 #define STATUSREGADDR 0x04	  // Indicates what messages there is to fetch. bit 7: Error message, bit 0: Punch message
 #define SETDATAINDEXREGADDR 0x05  // Index to the block data a register
-#define HARDWAREFEATURESENABLEDISABLEREGADDR 0x06  // Hardware feature, enabled or disable: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART, bit 3: RED channel only listen, bit 4: BLUE channel only listen
+#define HARDWAREFEATURESENABLEDISABLEREGADDR 0x06  // Hardware feature, enabled or disable: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART, bit 3: RED channel only listen, bit 4: BLUE channel only listen, bit 5: Send mode
 
 // Length registers
 #define PUNCHLENGTHREGADDR 0x20	  // Read punch message
@@ -30,7 +35,6 @@
 #define ERRORMSGREGADDR 0x47
 
 struct Punch *I2CSlave_punchToSendPointer;
-struct Punch *I2CSlave_punchToSendID;
 struct Punch I2CSlave_punchToSendBuffer;
 
 uint8_t I2CSlave_PunchLength = sizeof(struct Punch);
@@ -45,27 +49,33 @@ bool channelConfigurationChanged = false;
 
 bool IsRedChannelEnabled()
 {
-	return (I2CSlave_hardwareFeaturesEnableDisable & 0x01) > 0;
+	return (I2CSlave_hardwareFeaturesEnableDisable & I2CSLAVE_REDCHANNELBIT) > 0;
 }
 
 bool IsBlueChannelEnabled()
 {
-	return (I2CSlave_hardwareFeaturesEnableDisable & 0x02) > 0;
+	return (I2CSlave_hardwareFeaturesEnableDisable & I2CSLAVE_BLUECHANNELBIT) > 0;
 }
 
 bool IsSendErrorsToUARTEnabled()
 {
-	return (I2CSlave_hardwareFeaturesEnableDisable & 0x04) > 0;
+	return (I2CSlave_hardwareFeaturesEnableDisable & I2CSLAVE_UARTERRORBIT) > 0;
 }
 
 bool IsRedChannelListenOnlyEnabled()
 {
-	return (I2CSlave_hardwareFeaturesEnableDisable & 0x08) > 0;
+	return (I2CSlave_hardwareFeaturesEnableDisable & I2CSLAVE_REDCHANNELLISTENONLYBIT) > 0;
 }
 
 bool IsBlueChannelListenOnlyEnabled()
 {
-	return (I2CSlave_hardwareFeaturesEnableDisable & 0x10) > 0;
+	return (I2CSlave_hardwareFeaturesEnableDisable & I2CSLAVE_BLUECHANNELLISTENONLYBIT) > 0;
+}
+
+// Send mode note implemented yet
+bool IsInSendMode()
+{
+	return (I2CSlave_hardwareFeaturesEnableDisable & I2CSLAVE_SENDMODEBIT) > 0;
 }
 
 bool HasChannelConfigurationChanged()
@@ -76,6 +86,11 @@ bool HasChannelConfigurationChanged()
 void ClearHasChannelConfigurationChanged()
 {
 	channelConfigurationChanged = false;
+}
+
+void SetChannelConfigurationChanged()
+{
+	channelConfigurationChanged = true;
 }
 
 
@@ -164,7 +179,15 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 					}
 				} else {
 					I2CSlave_TransmitIndex++;
-					if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, ((uint8_t *) I2CSlave_punchToSendPointer)+I2CSlave_TransmitIndex, 1, I2C_FIRST_FRAME)) != HAL_OK)
+					uint8_t realIndexToUse = I2CSlave_TransmitIndex;
+					uint8_t headerLength = 1;
+					if (I2CSlave_TransmitIndex >= I2CSlave_punchToSendPointer->payloadLength + headerLength) {
+						// the index is after the end of the payload, we need to skip remaining empty bytes in the payload array
+						// and skip to the footer
+						uint8_t remainingPayloadLength = sizeof(I2CSlave_punchToSendPointer->payload) - I2CSlave_punchToSendPointer->payloadLength;
+						realIndexToUse += remainingPayloadLength;
+					}
+					if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, ((uint8_t *) I2CSlave_punchToSendPointer)+realIndexToUse, 1, I2C_FIRST_FRAME)) != HAL_OK)
 					{
 						char msg[30];
 						sprintf(msg, "PUNCHREGADDR:ret: %u", status);
@@ -178,7 +201,7 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 				// Last byte sent
 				if (I2CSlave_punchToSendPointer != NULL)
 				{
-					PunchQueue_popSafe(&incomingPunchQueue, I2CSlave_punchToSendID); // in theory another punch could have been added to the queue and we now pops the wrong one...make a safe pop version
+					PunchQueue_pop(&incomingPunchQueue);
 				}
 			}
 			break;
@@ -233,6 +256,7 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 		}
 		case HARDWAREFEATURESENABLEDISABLEREGADDR:
 		{
+			uint8_t prevFeaturesEnabled = I2CSlave_hardwareFeaturesEnableDisable;
 			if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, &I2CSlave_hardwareFeaturesEnableDisable, 1, I2C_FIRST_FRAME)) != HAL_OK)
 			{
 				char msg[46];
@@ -240,10 +264,12 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 				ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
 				Error_Handler();
 			}
-<<<<<<< HEAD
-			ErrorLog_printErrorsToUARTEnabled = (I2CSlave_hardwareFeaturesEnableDisable & 0x04);
-=======
->>>>>>> abbae6d0d404fcaae67b2a0e724ed29ea6095800
+			uint8_t newFeaturesEnabled = I2CSlave_hardwareFeaturesEnableDisable;
+			if ((prevFeaturesEnabled & 0b00011011) != (newFeaturesEnabled & 0b00011011))
+			{
+				SetChannelConfigurationChanged();
+			}
+
 			break;
 		}
 		case SETDATAINDEXREGADDR:
@@ -380,8 +406,10 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 				uint8_t lengthOfPunch = 0;
 				if (PunchQueue_getNoOfItems(&incomingPunchQueue) > 0)
 				{
-					PunchQueue_peek(&incomingPunchQueue, &I2CSlave_punchToSendBuffer, &I2CSlave_punchToSendID);
-					lengthOfPunch = I2CSlave_punchToSendBuffer.payloadLength + 4;
+					PunchQueue_peek(&incomingPunchQueue, &I2CSlave_punchToSendBuffer);
+					uint8_t headerLength = 1;
+					uint8_t footerLengthIncludingChannel = 3;
+					lengthOfPunch = I2CSlave_punchToSendBuffer.payloadLength + headerLength + footerLengthIncludingChannel;
 				}
 
 				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &lengthOfPunch, 1, I2C_FIRST_FRAME)) != HAL_OK)
@@ -411,8 +439,11 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 			{
 				if (PunchQueue_getNoOfItems(&incomingPunchQueue) > 0)
 				{
-					PunchQueue_peek(&incomingPunchQueue, &I2CSlave_punchToSendBuffer, &I2CSlave_punchToSendID);
+					PunchQueue_peek(&incomingPunchQueue, &I2CSlave_punchToSendBuffer);
 					I2CSlave_punchToSendPointer = &I2CSlave_punchToSendBuffer;
+					uint8_t headerLength = 1;
+					uint8_t footerLengthIncludingChannel = 3;
+					I2CSlave_PunchLength = I2CSlave_punchToSendBuffer.payloadLength + headerLength + footerLengthIncludingChannel;
 				} else {
 					I2CSlave_punchToSendPointer = NULL;
 				}

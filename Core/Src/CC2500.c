@@ -392,6 +392,7 @@ bool CC2500_ReadRXFifo(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPi
 
 bool CC2500_WriteTXFifo(SPI_HandleTypeDef* hspi, struct PortAndPin * chipSelectPin, uint8_t* txBytes, uint8_t length)
 {
+	// 0x7F: Burst access to TX FIFO
 	txBytes[0] = 0x7F;
 	if (!CC2500_WriteReadBytesSPI(hspi, chipSelectPin, txBytes, readBuffer, length+1))
 	{

@@ -9,7 +9,7 @@
 
 
 struct PunchQueue incomingPunchQueue = { .PunchQueue_front = -1, .PunchQueue_rear = -1 };
-
+struct Punch lastPunch;
 
 // Check if the queue is full
 uint8_t PunchQueue_getNoOfItems(struct PunchQueue * queue)
@@ -50,6 +50,28 @@ bool PunchQueue_isEmpty(struct PunchQueue * queue)
 	return false;
 }
 
+bool PunchQueue_isSamePunch(struct Punch * punch1, struct Punch * punch2)
+{
+	uint8_t punchType1 = punch1->payload[PUNCHTYPE_INDEX_PAYLOAD];
+	uint32_t senderId1;
+	if (punchType1 == PUNCHTYPE_STATION) {
+		senderId1 = (punch1->payload[4] << 24) + (punch1->payload[5] << 16) + (punch1->payload[6] << 8) + punch1->payload[7];
+	} else if (punchType1 == PUNCHTYPE_AIR_PLUS_LAST_MESSAGE || punchType1 == PUNCHTYPE_AIR_PLUS_MULTIPLE_MESSAGES) {
+		senderId1 = (punch1->payload[15] << 24) + (punch1->payload[16] << 16) + (punch1->payload[17] << 8) + punch1->payload[18];
+	}
+	uint32_t punchSequenceNo1 = punch1->payload[11];
+
+	uint8_t punchType2 = punch2->payload[PUNCHTYPE_INDEX_PAYLOAD];
+	uint32_t senderId2;
+	if (punchType2 == PUNCHTYPE_STATION) {
+		senderId2 = (punch2->payload[4] << 24) + (punch2->payload[5] << 16) + (punch2->payload[6] << 8) + punch2->payload[7];
+	} else if (punchType2 == PUNCHTYPE_AIR_PLUS_LAST_MESSAGE || punchType2 == PUNCHTYPE_AIR_PLUS_MULTIPLE_MESSAGES) {
+		senderId2 = (punch2->payload[15] << 24) + (punch2->payload[16] << 16) + (punch2->payload[17] << 8) + punch2->payload[18];
+	}
+	uint32_t punchSequenceNo2 = punch2->payload[11];
+
+	return senderId1 == senderId2 && punchSequenceNo1 == punchSequenceNo2;
+}
 
 uint8_t PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch)
 {
@@ -59,14 +81,9 @@ uint8_t PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch)
 	}
 	else
 	{
-		if (queue->PunchQueue_rear >= 0 &&
-				punch->payload[4] == queue->PunchQueue_items[queue->PunchQueue_rear].payload[4] &&
-				punch->payload[5]  == queue->PunchQueue_items[queue->PunchQueue_rear].payload[5] &&
-				punch->payload[6] == queue->PunchQueue_items[queue->PunchQueue_rear].payload[6] &&
-				punch->payload[7] == queue->PunchQueue_items[queue->PunchQueue_rear].payload[7] &&
-				punch->payload[11] == queue->PunchQueue_items[queue->PunchQueue_rear].payload[11] )
+		if (PunchQueue_isSamePunch(punch, &lastPunch))
 		{
-			// Same punch as previously received
+			// Same punch as last received
 			return SAMEPUNCH;
 		}
 		if (queue->PunchQueue_front == -1)
@@ -75,7 +92,8 @@ uint8_t PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch)
 		}
 		queue->PunchQueue_rear = (queue->PunchQueue_rear + 1) % PUNCHQUEUE_SIZE;
 		queue->PunchQueue_items[queue->PunchQueue_rear] = *punch;
-		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+		lastPunch = *punch;
+		IRQLineHandler_SetPunchesExist();
 		return ENQUEUESUCCESS;
 	}
 }
@@ -92,7 +110,7 @@ bool PunchQueue_deQueue(struct PunchQueue * queue, struct Punch * punch)
 		if (queue->PunchQueue_front == queue->PunchQueue_rear) {
 			queue->PunchQueue_front = -1;
 			queue->PunchQueue_rear = -1;
-			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
+			IRQLineHandler_ClearErrorMessagesExist();
 		}
 		else
 		{
@@ -102,7 +120,7 @@ bool PunchQueue_deQueue(struct PunchQueue * queue, struct Punch * punch)
 	}
 }
 
-bool PunchQueue_peek(struct PunchQueue * queue, struct Punch * punch, struct Punch ** punchID)
+bool PunchQueue_peek(struct PunchQueue * queue, struct Punch * punch)
 {
 	if (PunchQueue_isEmpty(queue))
 	{
@@ -111,7 +129,6 @@ bool PunchQueue_peek(struct PunchQueue * queue, struct Punch * punch, struct Pun
 	else
 	{
 		*punch = queue->PunchQueue_items[queue->PunchQueue_front];
-		*punchID = &queue->PunchQueue_items[queue->PunchQueue_front];
 		return true;
 	}
 }
@@ -127,39 +144,13 @@ bool PunchQueue_pop(struct PunchQueue * queue)
 		if (queue->PunchQueue_front == queue->PunchQueue_rear) {
 			queue->PunchQueue_front = -1;
 			queue->PunchQueue_rear = -1;
-			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
+			IRQLineHandler_ClearErrorMessagesExist();
 		}
 		else
 		{
 			queue->PunchQueue_front = (queue->PunchQueue_front + 1) % PUNCHQUEUE_SIZE;
 		}
 		return true;
-	}
-}
-
-bool PunchQueue_popSafe(struct PunchQueue * queue, struct Punch * punchID)
-{
-	if (PunchQueue_isEmpty(queue))
-	{
-		return false;
-	}
-	else
-	{
-		// only pop if it is same punch
-		if (&queue->PunchQueue_items[queue->PunchQueue_front] == punchID)
-		{
-			if (queue->PunchQueue_front == queue->PunchQueue_rear) {
-				queue->PunchQueue_front = -1;
-				queue->PunchQueue_rear = -1;
-				HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
-			}
-			else
-			{
-				queue->PunchQueue_front = (queue->PunchQueue_front + 1) % PUNCHQUEUE_SIZE;
-			}
-			return true;
-		}
-		return false;
 	}
 }
 

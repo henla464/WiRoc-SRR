@@ -21,8 +21,9 @@ extern bool IsBlueChannelEnabled(void);
 extern bool IsSendErrorsToUARTEnabled(void);
 extern bool IsRedChannelListenOnlyEnabled(void);
 extern bool IsBlueChannelListenOnlyEnabled(void);
+extern bool IsInSendMode(void);
 extern bool HasChannelConfigurationChanged(void);
 extern void ClearHasChannelConfigurationChanged(void);
-
+extern void SetChannelConfigurationChanged(void);
 
 #endif /* INC_I2CSLAVE_H_ */
