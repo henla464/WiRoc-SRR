@@ -155,6 +155,7 @@ int main(void)
    * instead of in MX_GPIO_Init() */
   HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
   HAL_Delay(1);
+  HAL_NVIC_DisableIRQ(EXTI4_15_IRQn); // for testing if we can get i2c working again
   isInitialized = true;
 
   /* USER CODE END 2 */
@@ -199,34 +200,7 @@ int main(void)
 	  //HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
 	  //HAL_ResumeTick();
 
-	  /*
-	  if (PunchQueue_isFull())
-	  {
-		   for(int i=0;i<6;i++) {
-			  char header[] = "Message\r\n";
-			  HAL_UART_Transmit(&huart1, header, strlen(header), HAL_MAX_DELAY);
-
-			  for(int idx=0;idx<33;idx++)
-			  {
-				  char format2[] = "0x%x\r\n";
-				  char format3[] = "0x0%x\r\n";
-				  if (PunchQueue_items[i][idx] < 0x0F)
-				  {
-					  char msg[100];
-			  		  sprintf(msg, format3, PunchQueue_items[i][idx]);
-			  		  HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
-				  } else
-				  {
-					  char msg[100];
-					  sprintf(msg, format2, PunchQueue_items[i][idx]);
-					  HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
-				  }
-			  }
-		  }
-		  return;
-	  }*/
     /* USER CODE END WHILE */
-
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -634,39 +608,41 @@ static void Configure_GDO_INT_2_AsGPIO()
 }
 
 static void ConfigureCC2500() {
-	ClearRXFifo_RedChannel();
-	if (IsRedChannelEnabled())
-	{
-		InitCC2500(&hspi1, &RedChannelChipSelectPortPin, REDCHANNEL);
-		ErrorLog_log("ConfigureCC2500", "configured red");
-	}
-	else
-	{
-		CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
-		HAL_Delay(1);
-		CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
-		HAL_Delay(1);
-		do {
-		} while (!CC2500_GetIsReadyAndIdle(&hspi1, &RedChannelChipSelectPortPin));  // while not chip ready and IDLE
-		CC2500_PowerDown(&hspi1, &RedChannelChipSelectPortPin);
-	}
+	//ClearRXFifo_RedChannel();
+	//if (IsRedChannelEnabled())
+	//{
+//		InitCC2500(&hspi1, &RedChannelChipSelectPortPin, REDCHANNEL);
+	//	ErrorLog_log("ConfigureCC2500", "configured red");
+	//}
+	//else
+	//{
+	//	Configure_GDO_INT_1_AsGPIO();
+	//	CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
+	//	HAL_Delay(1);
+	//	CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
+	//	HAL_Delay(1);
+	//	do {
+	//	} while (!CC2500_GetIsReadyAndIdle(&hspi1, &RedChannelChipSelectPortPin));  // while not chip ready and IDLE
+	//	CC2500_PowerDown(&hspi1, &RedChannelChipSelectPortPin);
+	//}
 
-	ClearRXFifo_BlueChannel();
-	if (IsBlueChannelEnabled())
-	{
-		InitCC2500(&hspi2, &BlueChannelChipSelectPortPin, BLUECHANNEL);
-		ErrorLog_log("ConfigureCC2500", "configured blue");
-	}
-	else
-	{
-		CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
-		HAL_Delay(1);
-		CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
-		HAL_Delay(1);
-		do {
-		} while (!CC2500_GetIsReadyAndIdle(&hspi2, &BlueChannelChipSelectPortPin));  // while not chip ready and IDLE
-		CC2500_PowerDown(&hspi2, &BlueChannelChipSelectPortPin);
-	}
+	//ClearRXFifo_BlueChannel();
+	//if (IsBlueChannelEnabled())
+		//{
+		//InitCC2500(&hspi2, &BlueChannelChipSelectPortPin, BLUECHANNEL);
+		//	ErrorLog_log("ConfigureCC2500", "configured blue");
+		//}
+		//else
+		//{
+		//Configure_GDO_INT_2_AsGPIO();
+		//CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
+		//HAL_Delay(1);
+		//CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
+		//HAL_Delay(1);
+		//do {
+		//} while (!CC2500_GetIsReadyAndIdle(&hspi2, &BlueChannelChipSelectPortPin));  // while not chip ready and IDLE
+		//CC2500_PowerDown(&hspi2, &BlueChannelChipSelectPortPin);
+		//}
 }
 
 static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin, uint8_t channel)
@@ -998,12 +974,12 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 		}
 		else if(GPIO_Pin == GPIO_PIN_6) // PA6 - second CC2500
 		{
-			ErrorLog_log("HAL_GPIO_EXTI_Falling_Callback", "BLUE");
+			//ErrorLog_log("HAL_GPIO_EXTI_Falling_Callback", "BLUE");
 			if (IsBlueChannelEnabled()) {
-				ErrorLog_log("HAL_GPIO_EXTI_Falling_Callback", "BLUE 2");
 				//HAL_ResumeTick();
 				//SystemClock_Config();
 				ReadMessage_BlueChannel();
+				ErrorLog_log("HAL_GPIO_EXTI_Falling_Callback", "BLUE 2");
 			}
 		}
 	}
