@@ -15,5 +15,6 @@ extern void IRQLineHandler_SetErrorMessagesExist(void);
 extern void IRQLineHandler_SetPunchesExist(void);
 extern void IRQLineHandler_ClearErrorMessagesExist(void);
 extern void IRQLineHandler_ClearPunchesExist(void);
+extern bool IRQLineHandler_GetErrorMessagesExist(void);
 
 #endif /* INC_IRQLINEHANDLER_H_ */

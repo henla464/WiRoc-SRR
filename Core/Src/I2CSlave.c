@@ -40,9 +40,8 @@ struct Punch I2CSlave_punchToSendBuffer;
 uint8_t I2CSlave_PunchLength = sizeof(struct Punch);
 uint8_t I2CSlave_receivedRegister[2];
 uint8_t I2CSlave_hardwareFeaturesAvailable = 0x1F;
-uint8_t I2CSlave_hardwareFeaturesEnableDisable = 0x03;
+uint8_t I2CSlave_hardwareFeaturesEnableDisable = 0x02;
 uint8_t I2CSlave_serialNumber[4] = {5, 6, 7, 8};
-uint16_t I2CSlave_LastErrorCount = 0;
 uint8_t I2CSlave_TransmitIndex = 0;
 uint8_t I2CSlave_ReceiveIndex = 0;
 bool channelConfigurationChanged = false;
@@ -133,15 +132,15 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 		}
 		case ERRORCOUNTREGADDR:
 		{
+			/*
 			uint8_t errorCount = 0;
 			if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &errorCount, 1, I2C_FIRST_FRAME)) != HAL_OK)
 			{
 				char msg[100];
 				sprintf(msg, "ERRORCOUNTREGADDR:ret: %u", status);
 				ErrorLog_log("HAL_I2C_SlaveTxCpltCallback", msg);
-				/* enable listen again? log error and return? */
 				Error_Handler();
-			}
+			}*/
 			break;
 		}
 		case STATUSREGADDR:
@@ -220,6 +219,11 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 					Error_Handler();
 				}
 			}
+
+			if (I2CSlave_TransmitIndex + 1 == strlen(ErrorLog_getMessage()))
+			{
+				IRQLineHandler_ClearErrorMessagesExist();
+			}
 			break;
 		}
 	}
@@ -256,7 +260,7 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 		}
 		case HARDWAREFEATURESENABLEDISABLEREGADDR:
 		{
-			uint8_t prevFeaturesEnabled = I2CSlave_hardwareFeaturesEnableDisable;
+			//uint8_t prevFeaturesEnabled = I2CSlave_hardwareFeaturesEnableDisable;
 			if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, &I2CSlave_hardwareFeaturesEnableDisable, 1, I2C_FIRST_FRAME)) != HAL_OK)
 			{
 				char msg[46];
@@ -264,11 +268,11 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 				ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
 				Error_Handler();
 			}
-			uint8_t newFeaturesEnabled = I2CSlave_hardwareFeaturesEnableDisable;
-			if ((prevFeaturesEnabled & 0b00011011) != (newFeaturesEnabled & 0b00011011))
-			{
+			//uint8_t newFeaturesEnabled = I2CSlave_hardwareFeaturesEnableDisable;
+			//if ((prevFeaturesEnabled & 0b00011011) != (newFeaturesEnabled & 0b00011011))
+			//{
 				SetChannelConfigurationChanged();
-			}
+			//}
 
 			break;
 		}
@@ -380,8 +384,7 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 					statusValToReturn |= 0x01;
 				}
 
-				uint16_t errorCount = ErrorLog_getErrorCount();
-				if (errorCount > I2CSlave_LastErrorCount)
+				if (IRQLineHandler_GetErrorMessagesExist())
 				{
 					statusValToReturn |= 0x80;
 				}
@@ -484,8 +487,10 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 						/* enable listen again? log error and return? */
 						Error_Handler();
 					}
-				} else {
-					I2CSlave_LastErrorCount = ErrorLog_getErrorCount();
+				}
+				if (I2CSlave_TransmitIndex + 1 == strlen(ErrorLog_getMessage()))
+				{
+					IRQLineHandler_ClearErrorMessagesExist();
 				}
 				break;
 			}
