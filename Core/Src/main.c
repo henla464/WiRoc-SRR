@@ -182,7 +182,7 @@ int main(void)
 
 	  if (HasChannelConfigurationChanged())
 	  {
-		  ErrorLog_log("main","config changed");
+		  ErrorLog_log("main","config changed012345678901234567890");
 		  HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
 		  Configure_GDO_INT_1_AsGPIO();
 		  Configure_GDO_INT_2_AsGPIO();
@@ -612,7 +612,7 @@ static void Configure_GDO_INT_2_AsGPIO()
 static void ConfigureCC2500() {
 	if (IsRedChannelEnabled())
 	{
-
+		ErrorLog_log("ConfigureCC2500", "Red");
 		InitCC2500(&hspi1, &RedChannelChipSelectPortPin, REDCHANNEL);
 		Configure_GDO_INT_1_AsFallingInterrupt();
 	}
@@ -629,6 +629,7 @@ static void ConfigureCC2500() {
 
 	if (IsBlueChannelEnabled())
 	{
+		ErrorLog_log("ConfigureCC2500", "Blue");
 		InitCC2500(&hspi2, &BlueChannelChipSelectPortPin, BLUECHANNEL);
 		Configure_GDO_INT_2_AsFallingInterrupt();
 	}
