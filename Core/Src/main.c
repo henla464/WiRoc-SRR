@@ -82,7 +82,8 @@ static bool EnableI2CListen(void);
 static void Configure_GDO_INT_1_AsGPIO(void);
 static void Configure_GDO_INT_2_AsGPIO(void);
 static void InitializeBothCC2500(void);
-
+static void Configure_GDO_INT_1_AsFallingInterrupt(void);
+static void Configure_GDO_INT_2_AsFallingInterrupt(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -131,12 +132,18 @@ int main(void)
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
 
+  HAL_GPIO_WritePin(GPIOA, RedChannelChipSelectPortPin.GPIO_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, BlueChannelChipSelectPortPin.GPIO_Pin, GPIO_PIN_SET);
+
   // Configure both the RED and BLUE Channel chip.
   InitializeBothCC2500();
+  HAL_GPIO_WritePin(GPIOA, RedChannelChipSelectPortPin.GPIO_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, BlueChannelChipSelectPortPin.GPIO_Pin, GPIO_PIN_SET);
 
+  // Make sure the IRQ to the NanoPi is not asserted
+  IRQLineHandler_ClearErrorMessagesExist();
+  IRQLineHandler_ClearPunchesExist();
   HAL_Delay(1);
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
 
 
   if (!EnableI2CListen())
@@ -154,7 +161,7 @@ int main(void)
    * To avoid them being triggered too early we enable irq here
    * instead of in MX_GPIO_Init() */
   HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
-  HAL_Delay(1);
+  //HAL_Delay(1);
   //HAL_NVIC_DisableIRQ(EXTI4_15_IRQn); // for testing if we can get i2c working again
   isInitialized = true;
 
@@ -181,7 +188,7 @@ int main(void)
 
 	  HAL_Delay(1);
 
-	  if (HasChannelConfigurationChanged())
+	  /*if (HasChannelConfigurationChanged())
 	  {
 		  ErrorLog_log("main","config changed012345678901234567890");
 		  HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
@@ -189,11 +196,14 @@ int main(void)
 		  Configure_GDO_INT_2_AsGPIO();
 
 		  ConfigureCC2500();
+
+		  Configure_GDO_INT_1_AsFallingInterrupt();
+		  Configure_GDO_INT_2_AsFallingInterrupt();
 		  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 		  ClearHasChannelConfigurationChanged();
 		  HAL_Delay(1);
 		  isInitialized = true;
-	  }
+	  }*/
 
 	  // go to sleep
 	  //HAL_SuspendTick();
@@ -495,7 +505,6 @@ static void MX_GPIO_Init(void)
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI4_15_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
@@ -504,7 +513,7 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 void InitI2C()
 {
-	//MX_I2C1_Init();
+	MX_I2C1_Init();
 }
 
 
@@ -614,6 +623,8 @@ static void InitializeBothCC2500()
 {
 	InitCC2500(&hspi1, &RedChannelChipSelectPortPin, REDCHANNEL);
 	InitCC2500(&hspi2, &BlueChannelChipSelectPortPin, BLUECHANNEL);
+	Configure_GDO_INT_1_AsFallingInterrupt();
+	Configure_GDO_INT_2_AsFallingInterrupt();
 }
 
 static void ConfigureCC2500() {
@@ -958,7 +969,12 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 				//HAL_ResumeTick();
 				//SystemClock_Config();
 				ReadMessage_RedChannel();
+			} else {
+				CC2500_ExitRXTX(&hspi1, &RedChannelChipSelectPortPin);
+				CC2500_FlushRXFIFO(&hspi1, &RedChannelChipSelectPortPin);
+				CC2500_EnableRX(&hspi1, &RedChannelChipSelectPortPin);
 			}
+
 		}
 		else if(GPIO_Pin == GPIO_PIN_6) // PA6 - second CC2500
 		{
@@ -967,6 +983,10 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 				//HAL_ResumeTick();
 				//SystemClock_Config();
 				ReadMessage_BlueChannel();
+			} else {
+				CC2500_ExitRXTX(&hspi2, &BlueChannelChipSelectPortPin);
+				CC2500_FlushRXFIFO(&hspi2, &BlueChannelChipSelectPortPin);
+				CC2500_EnableRX(&hspi2, &BlueChannelChipSelectPortPin);
 			}
 		}
 	}
