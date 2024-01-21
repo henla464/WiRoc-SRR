@@ -79,8 +79,7 @@ static void AckSentEnableRX_BlueChannel(void);
 static void SendAckReply_RedChannel(void);
 static void SendAckReply_BlueChannel(void);
 static bool EnableI2CListen(void);
-static void ClearRXFifo_RedChannel(void);
-static void ClearRXFifo_BlueChannel(void);
+static void Configure_GDO_INT_1_AsGPIO(void);
 
 
 /* USER CODE END PFP */
@@ -182,9 +181,6 @@ int main(void)
 
 	  if (HasChannelConfigurationChanged())
 	  {
-		  ErrorLog_log("main", "config changed");
-		  HAL_Delay(1);
-		  isInitialized = false;
 		  HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
 		  ConfigureCC2500();
 		  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
@@ -608,41 +604,9 @@ static void Configure_GDO_INT_2_AsGPIO()
 }
 
 static void ConfigureCC2500() {
-	//ClearRXFifo_RedChannel();
-	//if (IsRedChannelEnabled())
-	//{
-//		InitCC2500(&hspi1, &RedChannelChipSelectPortPin, REDCHANNEL);
-	//	ErrorLog_log("ConfigureCC2500", "configured red");
-	//}
-	//else
-	//{
-	//	Configure_GDO_INT_1_AsGPIO();
-	//	CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
-	//	HAL_Delay(1);
-	//	CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
-	//	HAL_Delay(1);
-	//	do {
-	//	} while (!CC2500_GetIsReadyAndIdle(&hspi1, &RedChannelChipSelectPortPin));  // while not chip ready and IDLE
-	//	CC2500_PowerDown(&hspi1, &RedChannelChipSelectPortPin);
-	//}
+		//CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
 
-	//ClearRXFifo_BlueChannel();
-	//if (IsBlueChannelEnabled())
-		//{
-		//InitCC2500(&hspi2, &BlueChannelChipSelectPortPin, BLUECHANNEL);
-		//	ErrorLog_log("ConfigureCC2500", "configured blue");
-		//}
-		//else
-		//{
-		//Configure_GDO_INT_2_AsGPIO();
-		//CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
 		//HAL_Delay(1);
-		//CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
-		//HAL_Delay(1);
-		//do {
-		//} while (!CC2500_GetIsReadyAndIdle(&hspi2, &BlueChannelChipSelectPortPin));  // while not chip ready and IDLE
-		//CC2500_PowerDown(&hspi2, &BlueChannelChipSelectPortPin);
-		//}
 }
 
 static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin, uint8_t channel)
@@ -817,10 +781,7 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 			return false;
 		}
 	} else {
-
-		char msg[100];
 		sprintf(msg, "Received too few or too many bytes: %u channel: %u payloadlength: %u", noOfRxBytes2, chipSelectPortPin->Channel, punch.payloadLength);
-		ErrorLog_log("ReadMessage", msg);
 		CC2500_ExitRXTX(phspi, chipSelectPortPin);
 		CC2500_FlushRXFIFO(phspi, chipSelectPortPin);
 		CC2500_EnableRX(phspi, chipSelectPortPin);
@@ -828,22 +789,6 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 	}
 
 	return true;
-}
-
-
-static void ClearRXFifo_RedChannel()
-{
-	CC2500_ExitRXTX(&hspi1, &RedChannelChipSelectPortPin);
-	CC2500_FlushRXFIFO(&hspi1, &RedChannelChipSelectPortPin);
-	CC2500_EnableRX(&hspi1, &RedChannelChipSelectPortPin);
-}
-
-
-static void ClearRXFifo_BlueChannel()
-{
-	CC2500_ExitRXTX(&hspi2, &BlueChannelChipSelectPortPin);
-	CC2500_FlushRXFIFO(&hspi2, &BlueChannelChipSelectPortPin);
-	CC2500_EnableRX(&hspi2, &BlueChannelChipSelectPortPin);
 }
 
 
