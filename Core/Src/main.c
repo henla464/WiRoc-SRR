@@ -79,6 +79,10 @@ static void AckSentEnableRX_BlueChannel(void);
 static void SendAckReply_RedChannel(void);
 static void SendAckReply_BlueChannel(void);
 static bool EnableI2CListen(void);
+static void ClearRXFifo_RedChannel(void);
+static void ClearRXFifo_BlueChannel(void);
+static void Configure_GDO_INT_1_AsGPIO(void);
+static void Configure_GDO_INT_2_AsGPIO(void);
 
 /* USER CODE END PFP */
 
@@ -178,8 +182,18 @@ int main(void)
 
 	  if (HasChannelConfigurationChanged())
 	  {
+		  // Check with error message if channelconfig changed is set via i2c!
+		  ErrorLog_log("main", "Configuration changed");
+		  // could overflow be a problem. It may overflow since it is not turned off. reset when configure should fix it?
+		  isInitialized = false;
+		  HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
+		  Configure_GDO_INT_1_AsGPIO();
+		  Configure_GDO_INT_2_AsGPIO();
 		  ConfigureCC2500();
+		  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 		  ClearHasChannelConfigurationChanged();
+		  HAL_Delay(1);
+		  isInitialized = true;
 	  }
 
 	  // go to sleep
@@ -622,33 +636,39 @@ static void Configure_GDO_INT_2_AsGPIO()
 static void ConfigureCC2500() {
 	if (IsRedChannelEnabled())
 	{
+
 		InitCC2500(&hspi1, &RedChannelChipSelectPortPin, REDCHANNEL);
+		Configure_GDO_INT_1_AsFallingInterrupt();
 	}
 	else
 	{
-		CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
-		HAL_Delay(1);
-		CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
-		HAL_Delay(1);
-		do {
-		} while (!CC2500_GetIsReadyAndIdle(&hspi1, &RedChannelChipSelectPortPin));  // while not chip ready and IDLE
-		CC2500_PowerDown(&hspi1, &RedChannelChipSelectPortPin);
+		//CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
+		//HAL_Delay(1);
+		//CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
+		//HAL_Delay(1);
+		//do {
+		//} while (!CC2500_GetIsReadyAndIdle(&hspi1, &RedChannelChipSelectPortPin));  // while not chip ready and IDLE
+		//CC2500_PowerDown(&hspi1, &RedChannelChipSelectPortPin);
 	}
 
 	if (IsBlueChannelEnabled())
 	{
 		InitCC2500(&hspi2, &BlueChannelChipSelectPortPin, BLUECHANNEL);
+		Configure_GDO_INT_2_AsFallingInterrupt();
 	}
 	else
 	{
-		CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
-		HAL_Delay(1);
-		CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
-		HAL_Delay(1);
-		do {
-		} while (!CC2500_GetIsReadyAndIdle(&hspi2, &BlueChannelChipSelectPortPin));  // while not chip ready and IDLE
-		CC2500_PowerDown(&hspi2, &BlueChannelChipSelectPortPin);
+		//CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
+		//HAL_Delay(1);
+		//CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
+		//HAL_Delay(1);
+		//do {
+		//} while (!CC2500_GetIsReadyAndIdle(&hspi2, &BlueChannelChipSelectPortPin));  // while not chip ready and IDLE
+		//CC2500_PowerDown(&hspi2, &BlueChannelChipSelectPortPin);
 	}
+
+
+
 }
 
 static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin, uint8_t channel)
@@ -846,7 +866,9 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 			return false;
 		}
 	} else {
-		ErrorLog_log("ReadMessage", "Received too few bytes or the payload length byte in message is too large so will flush");
+		char msg[100];
+		sprintf(msg, "Received too few or too many bytes: %u channel: %u payloadlength: %u", noOfRxBytes2, chipSelectPortPin->Channel, punch.payloadLength);
+		ErrorLog_log("ReadMessage", msg);
 		CC2500_ExitRXTX(phspi, chipSelectPortPin);
 		CC2500_FlushRXFIFO(phspi, chipSelectPortPin);
 		CC2500_EnableRX(phspi, chipSelectPortPin);
@@ -854,6 +876,22 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 	}
 
 	return true;
+}
+
+
+static void ClearRXFifo_RedChannel()
+{
+	CC2500_ExitRXTX(&hspi1, &RedChannelChipSelectPortPin);
+	CC2500_FlushRXFIFO(&hspi1, &RedChannelChipSelectPortPin);
+	CC2500_EnableRX(&hspi1, &RedChannelChipSelectPortPin);
+}
+
+
+static void ClearRXFifo_BlueChannel()
+{
+	CC2500_ExitRXTX(&hspi2, &BlueChannelChipSelectPortPin);
+	CC2500_FlushRXFIFO(&hspi2, &BlueChannelChipSelectPortPin);
+	CC2500_EnableRX(&hspi2, &BlueChannelChipSelectPortPin);
 }
 
 static void ReadMessage_RedChannel()
@@ -1023,9 +1061,8 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
 	/* User can add his own implementation to report the HAL error return state */
-	do {
-
-	}while (1);
+	//do {
+	//}while (1);
 
 	__disable_irq();
 	char msg[100];

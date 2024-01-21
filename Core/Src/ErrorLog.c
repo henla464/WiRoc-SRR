@@ -24,13 +24,14 @@ void ErrorLog_log(char* functionName, char* message)
 	uint8_t remainingSpace = 255-lengthToCopy-2;
 	uint8_t messageLengthToCopy = messageLength < remainingSpace ? messageLength : remainingSpace;
 	strncpy(&ErrorLog_message[lengthToCopy+2], message, messageLengthToCopy);
-	ErrorLog_message[lengthToCopy+2+messageLengthToCopy+1] = '\0';
+	ErrorLog_message[lengthToCopy+2+messageLengthToCopy] = '\0';
 
 	if (ErrorLog_UARTInitialized && IsSendErrorsToUARTEnabled())
 	{
 		HAL_UART_Transmit(ErrorLog_huart, (uint8_t *)ErrorLog_message, strlen(ErrorLog_message), HAL_MAX_DELAY);
 		HAL_UART_Transmit(ErrorLog_huart, (uint8_t *)"\r\n", 2, HAL_MAX_DELAY);
 	}
+	IRQLineHandler_SetErrorMessagesExist();
 }
 
 uint16_t ErrorLog_getErrorCount()

@@ -110,7 +110,7 @@ bool PunchQueue_deQueue(struct PunchQueue * queue, struct Punch * punch)
 		if (queue->PunchQueue_front == queue->PunchQueue_rear) {
 			queue->PunchQueue_front = -1;
 			queue->PunchQueue_rear = -1;
-			IRQLineHandler_ClearErrorMessagesExist();
+			IRQLineHandler_ClearPunchesExist();
 		}
 		else
 		{
@@ -144,7 +144,7 @@ bool PunchQueue_pop(struct PunchQueue * queue)
 		if (queue->PunchQueue_front == queue->PunchQueue_rear) {
 			queue->PunchQueue_front = -1;
 			queue->PunchQueue_rear = -1;
-			IRQLineHandler_ClearErrorMessagesExist();
+			IRQLineHandler_ClearPunchesExist();
 		}
 		else
 		{

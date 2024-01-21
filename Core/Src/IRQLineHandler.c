@@ -39,3 +39,8 @@ void IRQLineHandler_ClearPunchesExist()
 		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
 	}
 }
+
+bool IRQLineHandler_GetErrorMessagesExist()
+{
+	return errorMessagesExist;
+}
