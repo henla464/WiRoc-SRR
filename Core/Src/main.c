@@ -80,6 +80,7 @@ static void SendAckReply_RedChannel(void);
 static void SendAckReply_BlueChannel(void);
 static bool EnableI2CListen(void);
 static void Configure_GDO_INT_1_AsGPIO(void);
+static void Configure_GDO_INT_2_AsGPIO(void);
 
 
 /* USER CODE END PFP */
@@ -154,7 +155,7 @@ int main(void)
    * instead of in MX_GPIO_Init() */
   HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
   HAL_Delay(1);
-  HAL_NVIC_DisableIRQ(EXTI4_15_IRQn); // for testing if we can get i2c working again
+  //HAL_NVIC_DisableIRQ(EXTI4_15_IRQn); // for testing if we can get i2c working again
   isInitialized = true;
 
   /* USER CODE END 2 */
@@ -181,7 +182,11 @@ int main(void)
 
 	  if (HasChannelConfigurationChanged())
 	  {
+		  ErrorLog_log("main","config changed");
 		  HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
+		  Configure_GDO_INT_1_AsGPIO();
+		  Configure_GDO_INT_2_AsGPIO();
+
 		  ConfigureCC2500();
 		  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 		  ClearHasChannelConfigurationChanged();
@@ -603,11 +608,42 @@ static void Configure_GDO_INT_2_AsGPIO()
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 }
 
-static void ConfigureCC2500() {
-		//CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
 
+static void ConfigureCC2500() {
+	if (IsRedChannelEnabled())
+	{
+
+		InitCC2500(&hspi1, &RedChannelChipSelectPortPin, REDCHANNEL);
+		Configure_GDO_INT_1_AsFallingInterrupt();
+	}
+	else
+	{
+		//CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
 		//HAL_Delay(1);
+		//CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
+		//HAL_Delay(1);
+		//do {
+		//} while (!CC2500_GetIsReadyAndIdle(&hspi1, &RedChannelChipSelectPortPin));  // while not chip ready and IDLE
+		//CC2500_PowerDown(&hspi1, &RedChannelChipSelectPortPin);
+	}
+
+	if (IsBlueChannelEnabled())
+	{
+		InitCC2500(&hspi2, &BlueChannelChipSelectPortPin, BLUECHANNEL);
+		Configure_GDO_INT_2_AsFallingInterrupt();
+	}
+	else
+	{
+		//CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
+		//HAL_Delay(1);
+		//CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
+		//HAL_Delay(1);
+		//do {
+		//} while (!CC2500_GetIsReadyAndIdle(&hspi2, &BlueChannelChipSelectPortPin));  // while not chip ready and IDLE
+		//CC2500_PowerDown(&hspi2, &BlueChannelChipSelectPortPin);
+	}
 }
+
 
 static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin, uint8_t channel)
 {
@@ -781,6 +817,7 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 			return false;
 		}
 	} else {
+		char msg[100];
 		sprintf(msg, "Received too few or too many bytes: %u channel: %u payloadlength: %u", noOfRxBytes2, chipSelectPortPin->Channel, punch.payloadLength);
 		CC2500_ExitRXTX(phspi, chipSelectPortPin);
 		CC2500_FlushRXFIFO(phspi, chipSelectPortPin);
@@ -909,9 +946,7 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 	{
 		if(GPIO_Pin == GPIO_PIN_12) // PA12 - first CC2500
 		{
-			ErrorLog_log("HAL_GPIO_EXTI_Falling_Callback", "RED");
 			if (IsRedChannelEnabled()) {
-				ErrorLog_log("HAL_GPIO_EXTI_Falling_Callback", "RED 2");
 				//HAL_ResumeTick();
 				//SystemClock_Config();
 				ReadMessage_RedChannel();
@@ -924,7 +959,6 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 				//HAL_ResumeTick();
 				//SystemClock_Config();
 				ReadMessage_BlueChannel();
-				ErrorLog_log("HAL_GPIO_EXTI_Falling_Callback", "BLUE 2");
 			}
 		}
 	}
@@ -936,7 +970,6 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 	{
 		if(GPIO_Pin == GPIO_PIN_12) // PA12 - first CC2500
 		{
-			ErrorLog_log("HAL_GPIO_EXTI_Rising_Callback", "RED");
 			if (IsRedChannelEnabled()) {
 				//HAL_ResumeTick();
 				//SystemClock_Config();
@@ -945,7 +978,6 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 		}
 		else if(GPIO_Pin == GPIO_PIN_6) // PA6 - second CC2500
 		{
-			ErrorLog_log("HAL_GPIO_EXTI_Rising_Callback", "BLUE");
 			if (IsBlueChannelEnabled()) {
 				//HAL_ResumeTick();
 				//SystemClock_Config();
