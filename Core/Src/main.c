@@ -81,7 +81,7 @@ static void SendAckReply_BlueChannel(void);
 static bool EnableI2CListen(void);
 static void Configure_GDO_INT_1_AsGPIO(void);
 static void Configure_GDO_INT_2_AsGPIO(void);
-
+static void InitializeBothCC2500(void);
 
 /* USER CODE END PFP */
 
@@ -131,8 +131,8 @@ int main(void)
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
 
-  // Configure the RED and BLUE Channel. If a channel should not be enabled then put the corresponding CC2500 into sleep mode.
-  ConfigureCC2500();
+  // Configure both the RED and BLUE Channel chip.
+  InitializeBothCC2500();
 
   HAL_Delay(1);
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
@@ -169,6 +169,7 @@ int main(void)
 	  if (hi2c1.State == HAL_I2C_STATE_READY) {
 		  if (!EnableI2CListen())
 		  {
+			  ErrorLog_log("main","reconfig i2c");
 			  HAL_I2C_DeInit(&hi2c1);
 			  HAL_I2C_Init(&hi2c1);
 			  if (!EnableI2CListen())
@@ -202,6 +203,7 @@ int main(void)
 	  //HAL_ResumeTick();
 
     /* USER CODE END WHILE */
+
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -481,7 +483,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pins : PA6 PA12 */
   GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_12;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PB1 */
@@ -502,7 +504,7 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 void InitI2C()
 {
-	MX_I2C1_Init();
+	//MX_I2C1_Init();
 }
 
 
@@ -554,7 +556,7 @@ static void Configure_GDO_INT_1_AsFallingInterrupt()
 	/*Configure GPIO pins : PA4 */
 	GPIO_InitStruct.Pin = GPIO_PIN_12;
 	GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 	/* EXTI interrupt init*/
@@ -591,7 +593,7 @@ static void Configure_GDO_INT_2_AsFallingInterrupt()
 	/*Configure GPIO pins : PA1 */
 	GPIO_InitStruct.Pin = GPIO_PIN_6;
 	GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 	/* EXTI interrupt init*/
@@ -608,6 +610,11 @@ static void Configure_GDO_INT_2_AsGPIO()
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 }
 
+static void InitializeBothCC2500()
+{
+	InitCC2500(&hspi1, &RedChannelChipSelectPortPin, REDCHANNEL);
+	InitCC2500(&hspi2, &BlueChannelChipSelectPortPin, BLUECHANNEL);
+}
 
 static void ConfigureCC2500() {
 	if (IsRedChannelEnabled())
