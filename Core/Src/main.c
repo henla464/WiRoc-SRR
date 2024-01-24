@@ -551,7 +551,7 @@ static void Configure_GDO_INT_1_AsRisingInterrupt()
 	// Configure GPIO pins : PA4
 	GPIO_InitStruct.Pin = GPIO_PIN_12;
 	GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Pull = GPIO_PULLDOWN;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 	// EXTI interrupt init
@@ -578,7 +578,7 @@ static void Configure_GDO_INT_1_AsGPIO()
 	/*Configure GPIO pins : PA4 */
 	GPIO_InitStruct.Pin = GPIO_PIN_12;
 	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Pull = GPIO_PULLDOWN;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 }
 
@@ -589,7 +589,7 @@ static void Configure_GDO_INT_2_AsRisingInterrupt()
 	/*Configure GPIO pins : PA1 */
 	GPIO_InitStruct.Pin = GPIO_PIN_6;
 	GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Pull = GPIO_PULLDOWN;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 	/* EXTI interrupt init*/
@@ -615,7 +615,7 @@ static void Configure_GDO_INT_2_AsGPIO()
 	/*Configure GPIO pins : PA1 */
 	GPIO_InitStruct.Pin = GPIO_PIN_6;
 	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Pull = GPIO_PULLDOWN;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 }
 
@@ -970,6 +970,17 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 				//SystemClock_Config();
 				ReadMessage_RedChannel();
 			} else {
+				// If radio is active in receive but channel should be off then it is
+				// probably good to flush the RX fifo
+				uint8_t noOfRxBytes1 = 0;
+				uint8_t noOfRxBytes2 = 0;
+				do {
+					noOfRxBytes1 = CC2500_GetNoOfRXBytes(&hspi1, &RedChannelChipSelectPortPin);
+					if (noOfRxBytes1 == 0) {
+						break;
+					}
+					noOfRxBytes2 = CC2500_GetNoOfRXBytes(&hspi1, &RedChannelChipSelectPortPin);
+				} while (noOfRxBytes1 != noOfRxBytes2);
 				CC2500_ExitRXTX(&hspi1, &RedChannelChipSelectPortPin);
 				CC2500_FlushRXFIFO(&hspi1, &RedChannelChipSelectPortPin);
 				CC2500_EnableRX(&hspi1, &RedChannelChipSelectPortPin);
@@ -984,6 +995,17 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 				//SystemClock_Config();
 				ReadMessage_BlueChannel();
 			} else {
+				// If radio is active in receive but channel should be off then it is
+				// probably good to flush the RX fifo
+				uint8_t noOfRxBytes1 = 0;
+				uint8_t noOfRxBytes2 = 0;
+				do {
+					noOfRxBytes1 = CC2500_GetNoOfRXBytes(&hspi2, &BlueChannelChipSelectPortPin);
+					if (noOfRxBytes1 == 0) {
+						break;
+					}
+					noOfRxBytes2 = CC2500_GetNoOfRXBytes(&hspi2, &BlueChannelChipSelectPortPin);
+				} while (noOfRxBytes1 != noOfRxBytes2);
 				CC2500_ExitRXTX(&hspi2, &BlueChannelChipSelectPortPin);
 				CC2500_FlushRXFIFO(&hspi2, &BlueChannelChipSelectPortPin);
 				CC2500_EnableRX(&hspi2, &BlueChannelChipSelectPortPin);
@@ -1033,7 +1055,10 @@ void Error_Handler(void)
 	sprintf(msg, "FILE: %s LINE: %u\r\n", file, line);
 	ErrorLog_log("_Error_Hanler", msg);
 
-	HAL_Delay(200);
+	// don't use hal_delay in interrupt
+	for (volatile uint8_t i=0; i!=0xFF; i++);
+	for (volatile uint8_t i=0; i!=0xFF; i++);
+	for (volatile uint8_t i=0; i!=0xFF; i++);
 
 	HAL_NVIC_SystemReset();
   /* USER CODE END Error_Handler_Debug */

@@ -55,7 +55,6 @@ uint8_t I2CSlave_TransmitIndex = 0;
 uint8_t I2CSlave_ReceiveIndex = 0;
 bool channelConfigurationChanged = false;
 
-uint8_t I2CSlave_CallNo = 0;
 uint8_t I2CSlave_previousHardwareFeaturesEnableDisable = 0x03;
 
 bool IsRedChannelEnabled()
@@ -253,7 +252,8 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 		{
 			if (I2CSlave_ReceiveIndex < 4)
 			{
-				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, &I2CSlave_serialNumber[I2CSlave_ReceiveIndex], 1, I2C_FIRST_FRAME)) != HAL_OK)
+				I2CSlave_ReceiveIndex++;
+				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, &I2CSlave_serialNumber[I2CSlave_ReceiveIndex-1], 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
 					char msg[30];
 					sprintf(msg, "SERIALNOREGADDR:ret: %u", status);
@@ -261,13 +261,13 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 
 					Error_Handler();
 				}
-				I2CSlave_ReceiveIndex++;
 			}
 			break;
 		}
 		case HARDWAREFEATURESENABLEDISABLEREGADDR:
 		{
 			if (I2CSlave_ReceiveIndex <= 0) {
+				I2CSlave_ReceiveIndex++;
 				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, &I2CSlave_hardwareFeaturesEnableDisable, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
 					char msg[46];
@@ -282,12 +282,12 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 					I2CSlave_previousHardwareFeaturesEnableDisable = I2CSlave_hardwareFeaturesEnableDisable;
 				}
 			}
-			I2CSlave_ReceiveIndex++;
 			break;
 		}
 		case SETDATAINDEXREGADDR:
 		{
 			if (I2CSlave_ReceiveIndex <= 0) {
+				I2CSlave_ReceiveIndex++;
 				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, &I2CSlave_TransmitIndex, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
 					char msg[30];
@@ -296,7 +296,6 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 					Error_Handler();
 				}
 			}
-			I2CSlave_ReceiveIndex++;
 			break;
 		}
 		case PUNCHREGADDR:
