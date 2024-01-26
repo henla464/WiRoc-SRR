@@ -14,7 +14,8 @@
 
 extern __IO uint32_t I2C_Transfer_Complete;
 
-extern uint8_t I2CSlave_serialNumber[4];
+extern volatile uint8_t I2CSlave_serialNumber[4];
+extern volatile uint8_t I2CSlave_hardwareFeaturesEnableDisable;
 
 extern bool IsRedChannelEnabled(void);
 extern bool IsBlueChannelEnabled(void);

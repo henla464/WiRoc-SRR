@@ -8,8 +8,8 @@
 #include "PunchQueue.h"
 
 
-struct PunchQueue incomingPunchQueue = { .PunchQueue_front = -1, .PunchQueue_rear = -1 };
-struct Punch lastPunch;
+volatile struct PunchQueue incomingPunchQueue = { .PunchQueue_front = -1, .PunchQueue_rear = -1 };
+volatile struct Punch lastPunch;
 
 // Check if the queue is full
 uint8_t PunchQueue_getNoOfItems(struct PunchQueue * queue)
@@ -29,7 +29,7 @@ uint8_t PunchQueue_getNoOfItems(struct PunchQueue * queue)
 }
 
 // Check if the queue is full
-bool PunchQueue_isFull(struct PunchQueue * queue)
+bool PunchQueue_isFull(volatile struct PunchQueue * queue)
 {
 	if ((queue->PunchQueue_front == queue->PunchQueue_rear + 1)
 		  ||
@@ -41,7 +41,7 @@ bool PunchQueue_isFull(struct PunchQueue * queue)
 }
 
 // Check if the queue is empty
-bool PunchQueue_isEmpty(struct PunchQueue * queue)
+bool PunchQueue_isEmpty(volatile struct PunchQueue * queue)
 {
 	if (queue->PunchQueue_front == -1)
 	{
@@ -50,7 +50,7 @@ bool PunchQueue_isEmpty(struct PunchQueue * queue)
 	return false;
 }
 
-bool PunchQueue_isSamePunch(struct Punch * punch1, struct Punch * punch2)
+bool PunchQueue_isSamePunch(struct Punch * punch1, volatile struct Punch * punch2)
 {
 	uint8_t punchType1 = punch1->payload[PUNCHTYPE_INDEX_PAYLOAD];
 	uint32_t senderId1;
@@ -73,7 +73,7 @@ bool PunchQueue_isSamePunch(struct Punch * punch1, struct Punch * punch2)
 	return senderId1 == senderId2 && punchSequenceNo1 == punchSequenceNo2;
 }
 
-uint8_t PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch)
+uint8_t PunchQueue_enQueue(volatile struct PunchQueue * queue, struct Punch * punch)
 {
 	if (PunchQueue_isFull(queue))
 	{
@@ -98,7 +98,7 @@ uint8_t PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch)
 	}
 }
 
-bool PunchQueue_deQueue(struct PunchQueue * queue, struct Punch * punch)
+bool PunchQueue_deQueue(volatile struct PunchQueue * queue, struct Punch * punch)
 {
 	if (PunchQueue_isEmpty(queue))
 	{
@@ -120,7 +120,7 @@ bool PunchQueue_deQueue(struct PunchQueue * queue, struct Punch * punch)
 	}
 }
 
-bool PunchQueue_peek(struct PunchQueue * queue, struct Punch * punch)
+bool PunchQueue_peek(volatile struct PunchQueue * queue, struct Punch * punch)
 {
 	if (PunchQueue_isEmpty(queue))
 	{
@@ -133,7 +133,7 @@ bool PunchQueue_peek(struct PunchQueue * queue, struct Punch * punch)
 	}
 }
 
-bool PunchQueue_pop(struct PunchQueue * queue)
+bool PunchQueue_pop(volatile struct PunchQueue * queue)
 {
 	if (PunchQueue_isEmpty(queue))
 	{

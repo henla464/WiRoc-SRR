@@ -58,9 +58,9 @@ SPI_HandleTypeDef hspi2;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-bool isInitialized = false;
-struct PortAndPin RedChannelChipSelectPortPin;
-struct PortAndPin BlueChannelChipSelectPortPin;
+bool volatile isInitialized = false;
+struct PortAndPin RedChannelChipSelectPortPin = { .GPIOx = GPIOA, .GPIO_Pin = GPIO_PIN_15, .InterruptIRQ = EXTI4_15_IRQn, .Channel = REDCHANNEL};
+struct PortAndPin BlueChannelChipSelectPortPin = { .GPIOx = GPIOA, .GPIO_Pin = GPIO_PIN_5, .InterruptIRQ = EXTI4_15_IRQn, .Channel = BLUECHANNEL};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -106,16 +106,6 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  RedChannelChipSelectPortPin.GPIOx = GPIOA;
-  RedChannelChipSelectPortPin.GPIO_Pin = GPIO_PIN_15;
-  RedChannelChipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
-  RedChannelChipSelectPortPin.Channel = REDCHANNEL;
-
-  BlueChannelChipSelectPortPin.GPIOx = GPIOA;
-  BlueChannelChipSelectPortPin.GPIO_Pin = GPIO_PIN_5;
-  BlueChannelChipSelectPortPin.InterruptIRQ = EXTI4_15_IRQn;
-  BlueChannelChipSelectPortPin.Channel = BLUECHANNEL;
-
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -157,13 +147,18 @@ int main(void)
 	  }
   }
 
+  // Only BLUE channel enabled
+  I2CSlave_hardwareFeaturesEnableDisable = 0x02;
   /* PA6 PA12 is interrupt from CC2500
-   * To avoid them being triggered too early we enable irq here
+   * To avoid them being triggered too early,
+   * before it has been configured we enable irq here
+   * (by default a clock is on these CC2500 pins)
    * instead of in MX_GPIO_Init() */
   HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
   //HAL_Delay(1);
   //HAL_NVIC_DisableIRQ(EXTI4_15_IRQn); // for testing if we can get i2c working again
   isInitialized = true;
+
 
   /* USER CODE END 2 */
 

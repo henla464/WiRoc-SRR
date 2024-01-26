@@ -47,15 +47,15 @@ struct Punch *I2CSlave_punchToSendPointer;
 struct Punch I2CSlave_punchToSendBuffer;
 
 uint8_t I2CSlave_PunchLength = sizeof(struct Punch);
-uint8_t I2CSlave_receivedRegister;
+uint8_t volatile I2CSlave_receivedRegister;
 uint8_t I2CSlave_hardwareFeaturesAvailable = 0x1F;
-uint8_t I2CSlave_hardwareFeaturesEnableDisable = 0x03;
-uint8_t I2CSlave_serialNumber[4] = {5, 6, 7, 8};
-uint8_t I2CSlave_TransmitIndex = 0;
-uint8_t I2CSlave_ReceiveIndex = 0;
-bool channelConfigurationChanged = false;
+uint8_t volatile I2CSlave_hardwareFeaturesEnableDisable = 0x03;
+uint8_t volatile I2CSlave_serialNumber[4] = {5, 6, 7, 8};
+uint8_t volatile I2CSlave_TransmitIndex = 0;
+uint8_t volatile I2CSlave_ReceiveIndex = 0;
+bool volatile channelConfigurationChanged = false;
 
-uint8_t I2CSlave_previousHardwareFeaturesEnableDisable = 0x03;
+uint8_t volatile I2CSlave_previousHardwareFeaturesEnableDisable = 0x03;
 
 bool IsRedChannelEnabled()
 {
@@ -130,7 +130,7 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 			if (I2CSlave_TransmitIndex < sizeof(I2CSlave_serialNumber))
 			{
 				I2CSlave_TransmitIndex++;
-				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &I2CSlave_serialNumber[I2CSlave_TransmitIndex], 1, I2C_FIRST_FRAME)) != HAL_OK)
+				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, (uint8_t *) &I2CSlave_serialNumber[I2CSlave_TransmitIndex], 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
 					char msg[100];
 					sprintf(msg, "SERIALNOREGADDR:ret: %u", status);
@@ -253,7 +253,7 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 			if (I2CSlave_ReceiveIndex < 4)
 			{
 				I2CSlave_ReceiveIndex++;
-				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, &I2CSlave_serialNumber[I2CSlave_ReceiveIndex-1], 1, I2C_FIRST_FRAME)) != HAL_OK)
+				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, (uint8_t *)&I2CSlave_serialNumber[I2CSlave_ReceiveIndex-1], 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
 					char msg[30];
 					sprintf(msg, "SERIALNOREGADDR:ret: %u", status);
@@ -268,7 +268,7 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 		{
 			if (I2CSlave_ReceiveIndex <= 0) {
 				I2CSlave_ReceiveIndex++;
-				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, &I2CSlave_hardwareFeaturesEnableDisable, 1, I2C_FIRST_FRAME)) != HAL_OK)
+				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, (uint8_t *)&I2CSlave_hardwareFeaturesEnableDisable, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
 					char msg[46];
 					sprintf(msg, "HARDWAREFEATURESENABLEDISABLEREGADDR:ret: %u", status);
@@ -288,7 +288,7 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 		{
 			if (I2CSlave_ReceiveIndex <= 0) {
 				I2CSlave_ReceiveIndex++;
-				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, &I2CSlave_TransmitIndex, 1, I2C_FIRST_FRAME)) != HAL_OK)
+				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, (uint8_t *)&I2CSlave_TransmitIndex, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
 					char msg[30];
 					sprintf(msg, "SETDATAINDEXREGADDR:ret: %u", status);
@@ -355,7 +355,7 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 			}
 			case HARDWAREFEATURESENABLEDISABLEREGADDR:
 			{
-				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &I2CSlave_hardwareFeaturesEnableDisable, 1, I2C_LAST_FRAME)) != HAL_OK)
+				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, (uint8_t *)&I2CSlave_hardwareFeaturesEnableDisable, 1, I2C_LAST_FRAME)) != HAL_OK)
 				{
 					char msg[100];
 					sprintf(msg, "HARDWAREFEATURESENABLEDISABLEREGADDR:ret: %u", status);
@@ -367,7 +367,7 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 			case SERIALNOREGADDR:
 			{
 				I2CSlave_TransmitIndex=0;
-				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &I2CSlave_serialNumber[I2CSlave_TransmitIndex], 1, I2C_FIRST_FRAME)) != HAL_OK)
+				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, (uint8_t *)&I2CSlave_serialNumber[I2CSlave_TransmitIndex], 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
 					char msg[100];
 					sprintf(msg, "SERIALNOREGADDR:ret: %u", status);
@@ -415,7 +415,7 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 			case SETDATAINDEXREGADDR:
 			{
 
-				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &I2CSlave_TransmitIndex, 1, I2C_LAST_FRAME)) != HAL_OK)
+				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, (uint8_t *)&I2CSlave_TransmitIndex, 1, I2C_LAST_FRAME)) != HAL_OK)
 				{
 					char msg[100];
 					sprintf(msg, "SETDATAINDEXREGADDR:ret: %u", status);
@@ -527,7 +527,7 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 	{
 		/*##- Put I2C peripheral in reception process ###########################*/
 		I2CSlave_ReceiveIndex = 0;
-		if ((status = HAL_I2C_Slave_Seq_Receive_IT(hi2c, &I2CSlave_receivedRegister, 1, I2C_FIRST_FRAME)) != HAL_OK)
+		if ((status = HAL_I2C_Slave_Seq_Receive_IT(hi2c, (uint8_t *)&I2CSlave_receivedRegister, 1, I2C_FIRST_FRAME)) != HAL_OK)
 		{
 			char msg[100];
 			sprintf(msg, "ELSE:ret: %u", status);

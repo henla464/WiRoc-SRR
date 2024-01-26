@@ -25,10 +25,6 @@
 #define PUNCHTYPE_AIR_PLUS_LAST_MESSAGE 0xb1
 #define PUNCHTYPE_AIR_PLUS_MULTIPLE_MESSAGES 0xb7
 
-extern int8_t PunchQueue_front;
-extern int8_t PunchQueue_rear;
-
-
 struct MessageStatus {
   uint8_t rssi;
   uint8_t crc;
@@ -48,16 +44,16 @@ struct PunchQueue {
 };
 
 
-extern struct PunchQueue incomingPunchQueue;
+volatile extern struct PunchQueue incomingPunchQueue;
 
 uint8_t PunchQueue_getNoOfItems();
-bool PunchQueue_isFull(struct PunchQueue * queue);
-bool PunchQueue_isEmpty(struct PunchQueue * queue);
-bool PunchQueue_isSamePunch(struct Punch * punch1, struct Punch * punch2);
-uint8_t PunchQueue_enQueue(struct PunchQueue * queue, struct Punch * punch);
-bool PunchQueue_deQueue(struct PunchQueue * queue, struct Punch * punch);
-bool PunchQueue_peek(struct PunchQueue * queue, struct Punch * punch);
-bool PunchQueue_pop(struct PunchQueue * queue);
-bool PunchQueue_popSafe(struct PunchQueue * queue, struct Punch * punchID);
+bool PunchQueue_isFull(volatile struct PunchQueue * queue);
+bool PunchQueue_isEmpty(volatile struct PunchQueue * queue);
+bool PunchQueue_isSamePunch(struct Punch * punch1, volatile struct Punch * punch2);
+uint8_t PunchQueue_enQueue(volatile struct PunchQueue * queue, struct Punch * punch);
+bool PunchQueue_deQueue(volatile struct PunchQueue * queue, struct Punch * punch);
+bool PunchQueue_peek(volatile struct PunchQueue * queue, struct Punch * punch);
+bool PunchQueue_pop(volatile struct PunchQueue * queue);
+bool PunchQueue_popSafe(volatile struct PunchQueue * queue, struct Punch * punchID);
 
 #endif /* INC_PUNCHQUEUE_H_ */
