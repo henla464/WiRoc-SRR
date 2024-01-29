@@ -762,6 +762,13 @@ static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectP
 	CC2500_EnableRX(phspi, chipSelectPortPin);
 }
 
+static void FlushRXFifo(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin)
+{
+	CC2500_ExitRXTX(phspi, chipSelectPortPin);
+	CC2500_FlushRXFIFO(phspi, chipSelectPortPin);
+	CC2500_EnableRX(phspi, chipSelectPortPin);
+}
+
 uint8_t PunchReplySequenceNo = 1;
 uint8_t PunchReply[] = {0x00, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3F, 0x23, 0x00, 0x73, 0x60}; // first byte is SPI header byte
 static uint8_t GetPunchReplyIncludingSpaceForCommandByte(struct Punch punch, uint8_t * punchReply)
@@ -787,6 +794,8 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 	do {
 		noOfRxBytes1 = CC2500_GetNoOfRXBytes(phspi, chipSelectPortPin);
 		if (noOfRxBytes1 == 0) {
+			// When the length doesn't make sense flush
+			FlushRXFifo(phspi, chipSelectPortPin);
 			return false;
 		}
 		noOfRxBytes2 = CC2500_GetNoOfRXBytes(phspi, chipSelectPortPin);
@@ -796,6 +805,7 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 	if (!CC2500_ReadRXFifo(phspi, chipSelectPortPin, &punch.payloadLength, 1))
 	{
 		ErrorLog_log("ReadMessage", "CC2500_ReadRXFifo ret false (1)");
+		FlushRXFifo(phspi, chipSelectPortPin);
 		return false;
 	}
 
@@ -808,11 +818,13 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 		if (!CC2500_ReadRXFifo(phspi, chipSelectPortPin, punch.payload, punch.payloadLength))
 		{
 			ErrorLog_log("ReadMessage", "CC2500_ReadRXFifo ret false (2)");
+			FlushRXFifo(phspi, chipSelectPortPin);
 			return false;
 		}
 		if (!CC2500_ReadRXFifo(phspi, chipSelectPortPin, (uint8_t *)&punch.messageStatus, footerLength))
 		{
 			ErrorLog_log("ReadMessage", "CC2500_ReadRXFifo ret false (3)");
+			FlushRXFifo(phspi, chipSelectPortPin);
 			return false;
 		}
 		if (punch.messageStatus.crc & 0x80)
@@ -824,18 +836,18 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 			{
 				// queue full so don't ack
 				ErrorLog_log("ReadMessage", "Queue full");
+				FlushRXFifo(phspi, chipSelectPortPin);
 				return false;
 			}
 			// when enqueueResult is  ENQUEUESUCCESS or SAMEPUNCH then punch should be acked (unless in listen only mode)
 		} else {
+			FlushRXFifo(phspi, chipSelectPortPin);
 			return false;
 		}
 	} else {
 		char msg[100];
 		sprintf(msg, "Received too few or too many bytes: %u channel: %u payloadlength: %u", noOfRxBytes2, chipSelectPortPin->Channel, punch.payloadLength);
-		CC2500_ExitRXTX(phspi, chipSelectPortPin);
-		CC2500_FlushRXFIFO(phspi, chipSelectPortPin);
-		CC2500_EnableRX(phspi, chipSelectPortPin);
+		FlushRXFifo(phspi, chipSelectPortPin);
 		return false;
 	}
 
@@ -976,9 +988,7 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 					}
 					noOfRxBytes2 = CC2500_GetNoOfRXBytes(&hspi1, &RedChannelChipSelectPortPin);
 				} while (noOfRxBytes1 != noOfRxBytes2);
-				CC2500_ExitRXTX(&hspi1, &RedChannelChipSelectPortPin);
-				CC2500_FlushRXFIFO(&hspi1, &RedChannelChipSelectPortPin);
-				CC2500_EnableRX(&hspi1, &RedChannelChipSelectPortPin);
+				FlushRXFifo(&hspi1, &RedChannelChipSelectPortPin);
 			}
 
 		}
@@ -1001,9 +1011,7 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 					}
 					noOfRxBytes2 = CC2500_GetNoOfRXBytes(&hspi2, &BlueChannelChipSelectPortPin);
 				} while (noOfRxBytes1 != noOfRxBytes2);
-				CC2500_ExitRXTX(&hspi2, &BlueChannelChipSelectPortPin);
-				CC2500_FlushRXFIFO(&hspi2, &BlueChannelChipSelectPortPin);
-				CC2500_EnableRX(&hspi2, &BlueChannelChipSelectPortPin);
+				FlushRXFifo(&hspi2, &BlueChannelChipSelectPortPin);
 			}
 		}
 	}

@@ -53,7 +53,7 @@ bool PunchQueue_isEmpty(volatile struct PunchQueue * queue)
 bool PunchQueue_isSamePunch(struct Punch * punch1, volatile struct Punch * punch2)
 {
 	uint8_t punchType1 = punch1->payload[PUNCHTYPE_INDEX_PAYLOAD];
-	uint32_t senderId1;
+	uint32_t senderId1 = 0;
 	if (punchType1 == PUNCHTYPE_STATION) {
 		senderId1 = (punch1->payload[4] << 24) + (punch1->payload[5] << 16) + (punch1->payload[6] << 8) + punch1->payload[7];
 	} else if (punchType1 == PUNCHTYPE_AIR_PLUS_LAST_MESSAGE || punchType1 == PUNCHTYPE_AIR_PLUS_MULTIPLE_MESSAGES) {
@@ -62,7 +62,7 @@ bool PunchQueue_isSamePunch(struct Punch * punch1, volatile struct Punch * punch
 	uint32_t punchSequenceNo1 = punch1->payload[11];
 
 	uint8_t punchType2 = punch2->payload[PUNCHTYPE_INDEX_PAYLOAD];
-	uint32_t senderId2;
+	uint32_t senderId2 = 0;
 	if (punchType2 == PUNCHTYPE_STATION) {
 		senderId2 = (punch2->payload[4] << 24) + (punch2->payload[5] << 16) + (punch2->payload[6] << 8) + punch2->payload[7];
 	} else if (punchType2 == PUNCHTYPE_AIR_PLUS_LAST_MESSAGE || punchType2 == PUNCHTYPE_AIR_PLUS_MULTIPLE_MESSAGES) {
