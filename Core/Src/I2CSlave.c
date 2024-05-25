@@ -17,6 +17,7 @@
 #include "main.h"
 #include "string.h"
 #include "ErrorLog.h"
+#include "PunchQueue.h"
 
 #define I2CSLAVE_FIRMWAREVERSION 1
 #define I2CSLAVE_REDCHANNELBIT  0b00000001
@@ -46,7 +47,8 @@
 struct Punch *I2CSlave_punchToSendPointer;
 struct Punch I2CSlave_punchToSendBuffer;
 
-uint8_t I2CSlave_PunchLength = sizeof(struct Punch);
+uint8_t I2CSlave_PunchRecordSize = sizeof(struct Punch);
+//uint8_t I2CSlave_PunchLength = sizeof(struct Punch);
 uint8_t volatile I2CSlave_receivedRegister;
 uint8_t I2CSlave_hardwareFeaturesAvailable = 0x1F;
 uint8_t volatile I2CSlave_hardwareFeaturesEnableDisable = 0x03;
@@ -108,6 +110,20 @@ void I2C_Reset(I2C_HandleTypeDef *hi2c)
 {
 	RCC->APBRSTR1 |= (1 << 22);
 	InitI2C();
+}
+
+uint8_t GetRealIndexToUse(uint8_t transmitIndex, uint8_t currentPayloadLength)
+{
+	uint8_t realIndexToUse = transmitIndex;
+	uint8_t headerLength = 1;
+	if (transmitIndex >= currentPayloadLength + headerLength)
+	{
+		// the index is after the end of the payload, we need to skip remaining empty bytes in the payload array
+		// and skip to the footer
+		uint8_t remainingPayloadLength = MAX_PUNCH_LENGTH - currentPayloadLength;
+		realIndexToUse += remainingPayloadLength;
+	}
+	return realIndexToUse;
 }
 
 void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
@@ -181,17 +197,9 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 					}
 				}
 			} else {
-				uint8_t realIndexToUse = I2CSlave_TransmitIndex;
-				uint8_t headerLength = 1;
-				if (I2CSlave_TransmitIndex >= I2CSlave_punchToSendPointer->payloadLength + headerLength)
-				{
-					// the index is after the end of the payload, we need to skip remaining empty bytes in the payload array
-					// and skip to the footer
-					uint8_t remainingPayloadLength = sizeof(I2CSlave_punchToSendPointer->payload) - I2CSlave_punchToSendPointer->payloadLength;
-					realIndexToUse += remainingPayloadLength;
-				}
+				uint8_t realIndexToUse = GetRealIndexToUse(I2CSlave_TransmitIndex, I2CSlave_punchToSendPointer->payloadLength);
 
-				if (realIndexToUse < I2CSlave_PunchLength)
+				if (realIndexToUse < I2CSlave_PunchRecordSize)
 				{
 					if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, ((uint8_t *) I2CSlave_punchToSendPointer)+realIndexToUse, 1, I2C_FIRST_FRAME)) != HAL_OK)
 					{
@@ -465,13 +473,13 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 				{
 					PunchQueue_peek(&incomingPunchQueue, &I2CSlave_punchToSendBuffer);
 					I2CSlave_punchToSendPointer = &I2CSlave_punchToSendBuffer;
-					uint8_t headerLength = 1;
-					uint8_t footerLengthIncludingChannel = 3;
-					I2CSlave_PunchLength = I2CSlave_punchToSendBuffer.payloadLength + headerLength + footerLengthIncludingChannel;
+					//uint8_t headerLength = 1;
+					//uint8_t footerLengthIncludingChannel = 3;
+					//I2CSlave_PunchLength = I2CSlave_punchToSendBuffer.payloadLength + headerLength + footerLengthIncludingChannel;
 				} else {
 					I2CSlave_punchToSendPointer = NULL;
 				}
-				if (I2CSlave_TransmitIndex < I2CSlave_PunchLength)
+				if (I2CSlave_TransmitIndex < I2CSlave_PunchRecordSize)
 				{
 					if (I2CSlave_punchToSendPointer == NULL) {
 						uint8_t zeroByte = 0;

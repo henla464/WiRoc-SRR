@@ -59,6 +59,10 @@ UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
 bool volatile isInitialized = false;
+bool volatile RedChannelSyncWordInterrupt = false;
+bool volatile RedChannelSyncWordDetected = false;
+bool volatile BlueChannelSyncWordInterrupt = false;
+bool volatile BlueChannelSyncWordDetected = false;
 struct PortAndPin RedChannelChipSelectPortPin = { .GPIOx = GPIOA, .GPIO_Pin = GPIO_PIN_15, .InterruptIRQ = EXTI4_15_IRQn, .Channel = REDCHANNEL};
 struct PortAndPin BlueChannelChipSelectPortPin = { .GPIOx = GPIOA, .GPIO_Pin = GPIO_PIN_5, .InterruptIRQ = EXTI4_15_IRQn, .Channel = BLUECHANNEL};
 /* USER CODE END PV */
@@ -71,7 +75,7 @@ static void MX_I2C1_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
-static void ConfigureCC2500(void);
+static void ReconfigureCC2500(void);
 static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPin ,uint8_t channel);
 static uint8_t GetPunchReplyIncludingSpaceForCommandByte(struct Punch punch, uint8_t * punchReply);
 static void AckSentEnableRX_RedChannel(void);
@@ -181,24 +185,58 @@ int main(void)
 		  }
 	  }
 
+
+	  // Check if red chip is hanging with interrupt high
+	  GPIO_PinState redInt = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_12);
+	  if (redInt == GPIO_PIN_SET && RedChannelSyncWordInterrupt)
+	  {
+		  // Sync word detected, wait enough time to receive the message
+		  RedChannelSyncWordDetected = true;
+	      HAL_Delay(10);
+	      if (RedChannelSyncWordDetected)
+	      {
+	    	  // The falling interrupt has not happened, something is amiss
+	    	  // Need to disable interrupt because FlushRXFifo will use SPI
+	    	   // and can't interupt write/read SPI (will result in HAL_BUSY)
+	    	  HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
+	    	  CC2500_FlushRXFIFO(&hspi1, &RedChannelChipSelectPortPin);
+	    	  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+	    	  RedChannelSyncWordDetected = false;
+	    	  ErrorLog_log("main", "Stuck interrupt red channel");
+	      }
+	  }
+
+	  GPIO_PinState blueInt = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6);
+	  if (blueInt == GPIO_PIN_SET && BlueChannelSyncWordInterrupt)
+	  {
+		  // Sync word detected, wait enough time to receive the message
+		  BlueChannelSyncWordDetected = true;
+		  HAL_Delay(10);
+		  if (BlueChannelSyncWordDetected)
+		  {
+			  // The falling interrupt has not happened, something is amiss
+			  // Need to disable interrupt because FlushRXFifo will use SPI
+			  // and can't interupt write/read SPI (will result in HAL_BUSY)
+			  HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
+			  CC2500_FlushRXFIFO(&hspi2, &BlueChannelChipSelectPortPin);
+			  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+			  BlueChannelSyncWordDetected = false;
+			  ErrorLog_log("main", "Stuck interrupt blue channel");
+		  }
+	  }
+
+
 	  HAL_Delay(1);
 
-	  /*if (HasChannelConfigurationChanged())
+	  if (HasChannelConfigurationChanged())
 	  {
 		  ErrorLog_log("main","config changed012345678901234567890");
-		  HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
-		  Configure_GDO_INT_1_AsGPIO();
-		  Configure_GDO_INT_2_AsGPIO();
-
-		  ConfigureCC2500();
-
-		  Configure_GDO_INT_1_AsFallingInterrupt();
-		  Configure_GDO_INT_2_AsFallingInterrupt();
-		  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+		  isInitialized = false;
+		  ReconfigureCC2500();
 		  ClearHasChannelConfigurationChanged();
 		  HAL_Delay(1);
 		  isInitialized = true;
-	  }*/
+	  }
 
 	  // go to sleep
 	  //HAL_SuspendTick();
@@ -542,6 +580,7 @@ static bool EnableI2CListen()
 
 static void Configure_GDO_INT_1_AsRisingInterrupt()
 {
+	RedChannelSyncWordInterrupt = false;
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
 	// Configure GPIO pins : PA4
 	GPIO_InitStruct.Pin = GPIO_PIN_12;
@@ -556,11 +595,12 @@ static void Configure_GDO_INT_1_AsRisingInterrupt()
 
 static void Configure_GDO_INT_1_AsFallingInterrupt()
 {
+	RedChannelSyncWordInterrupt = true;
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
 	/*Configure GPIO pins : PA4 */
 	GPIO_InitStruct.Pin = GPIO_PIN_12;
 	GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 	/* EXTI interrupt init*/
@@ -569,6 +609,7 @@ static void Configure_GDO_INT_1_AsFallingInterrupt()
 
 static void Configure_GDO_INT_1_AsGPIO()
 {
+	RedChannelSyncWordInterrupt = false;
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
 	/*Configure GPIO pins : PA4 */
 	GPIO_InitStruct.Pin = GPIO_PIN_12;
@@ -580,6 +621,7 @@ static void Configure_GDO_INT_1_AsGPIO()
 
 static void Configure_GDO_INT_2_AsRisingInterrupt()
 {
+	BlueChannelSyncWordInterrupt = false;
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
 	/*Configure GPIO pins : PA1 */
 	GPIO_InitStruct.Pin = GPIO_PIN_6;
@@ -593,11 +635,12 @@ static void Configure_GDO_INT_2_AsRisingInterrupt()
 
 static void Configure_GDO_INT_2_AsFallingInterrupt()
 {
+	BlueChannelSyncWordInterrupt = true;
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
 	/*Configure GPIO pins : PA1 */
 	GPIO_InitStruct.Pin = GPIO_PIN_6;
 	GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 	/* EXTI interrupt init*/
@@ -606,6 +649,7 @@ static void Configure_GDO_INT_2_AsFallingInterrupt()
 
 static void Configure_GDO_INT_2_AsGPIO()
 {
+	BlueChannelSyncWordInterrupt = false;
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
 	/*Configure GPIO pins : PA1 */
 	GPIO_InitStruct.Pin = GPIO_PIN_6;
@@ -622,7 +666,10 @@ static void InitializeBothCC2500()
 	Configure_GDO_INT_2_AsFallingInterrupt();
 }
 
-static void ConfigureCC2500() {
+static void ReconfigureCC2500() {
+	HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
+	Configure_GDO_INT_1_AsGPIO();
+	Configure_GDO_INT_2_AsGPIO();
 	if (IsRedChannelEnabled())
 	{
 		ErrorLog_log("ConfigureCC2500", "Red");
@@ -631,13 +678,13 @@ static void ConfigureCC2500() {
 	}
 	else
 	{
-		//CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
-		//HAL_Delay(1);
-		//CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
-		//HAL_Delay(1);
-		//do {
-		//} while (!CC2500_GetIsReadyAndIdle(&hspi1, &RedChannelChipSelectPortPin));  // while not chip ready and IDLE
-		//CC2500_PowerDown(&hspi1, &RedChannelChipSelectPortPin);
+		CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
+		HAL_Delay(1);
+		CC2500_Reset(&hspi1, &RedChannelChipSelectPortPin);
+		HAL_Delay(1);
+		do {
+		} while (!CC2500_GetIsReadyAndIdle(&hspi1, &RedChannelChipSelectPortPin));  // while not chip ready and IDLE
+		CC2500_PowerDown(&hspi1, &RedChannelChipSelectPortPin);
 	}
 
 	if (IsBlueChannelEnabled())
@@ -648,13 +695,18 @@ static void ConfigureCC2500() {
 	}
 	else
 	{
-		//CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
-		//HAL_Delay(1);
-		//CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
-		//HAL_Delay(1);
-		//do {
-		//} while (!CC2500_GetIsReadyAndIdle(&hspi2, &BlueChannelChipSelectPortPin));  // while not chip ready and IDLE
-		//CC2500_PowerDown(&hspi2, &BlueChannelChipSelectPortPin);
+		CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
+		HAL_Delay(1);
+		CC2500_Reset(&hspi2, &BlueChannelChipSelectPortPin);
+		HAL_Delay(1);
+		do {
+		} while (!CC2500_GetIsReadyAndIdle(&hspi2, &BlueChannelChipSelectPortPin));  // while not chip ready and IDLE
+		CC2500_PowerDown(&hspi2, &BlueChannelChipSelectPortPin);
+	}
+
+	if (IsRedChannelEnabled() || IsBlueChannelEnabled())
+	{
+		HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 	}
 }
 
@@ -972,6 +1024,9 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 	{
 		if(GPIO_Pin == GPIO_PIN_12) // PA12 - first CC2500
 		{
+			// We should reset RedChannelSyncWordDetected now that we received
+			// a falling edge and interrupt will not be stuck high
+			RedChannelSyncWordDetected = false;
 			if (IsRedChannelEnabled()) {
 				//HAL_ResumeTick();
 				//SystemClock_Config();
@@ -994,7 +1049,9 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 		}
 		else if(GPIO_Pin == GPIO_PIN_6) // PA6 - second CC2500
 		{
-			//ErrorLog_log("HAL_GPIO_EXTI_Falling_Callback", "BLUE");
+			// We should reset BlueChannelSyncWordDetected now that we received
+			// a falling edge and interrupt will not be stuck high
+			BlueChannelSyncWordDetected = false;
 			if (IsBlueChannelEnabled()) {
 				//HAL_ResumeTick();
 				//SystemClock_Config();

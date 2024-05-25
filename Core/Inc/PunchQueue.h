@@ -12,8 +12,9 @@
 #include "stm32g0xx_hal.h"
 #include "IRQLineHandler.h"
 
-#define PUNCHQUEUE_SIZE 6
+#define PUNCHQUEUE_SIZE 10
 #define PUNCH_LENGTH_STATION 30
+#define MAX_PUNCH_LENGTH PUNCH_LENGTH_STATION
 #define PUNCH_LENGTH_AIR_PLUS_LAST_MESSAGE 25
 #define PUNCH_LENGTH_AIR_PLUS_MULTIPLE_MESSAGES 27  // when SI card sends all or all unsent punches
 #define QUEUEISFULL 1
@@ -32,7 +33,7 @@ struct MessageStatus {
 
 struct Punch {
   uint8_t payloadLength;
-  uint8_t payload[PUNCH_LENGTH_STATION];
+  uint8_t payload[MAX_PUNCH_LENGTH];
   struct MessageStatus messageStatus;
   uint8_t channel;
 };
