@@ -18,6 +18,7 @@
 #include "string.h"
 #include "ErrorLog.h"
 #include "PunchQueue.h"
+#include "SendPunchQueue.h"
 
 #define I2CSLAVE_FIRMWAREVERSION 1
 #define I2CSLAVE_REDCHANNELBIT  0b00000001
@@ -33,7 +34,10 @@
 #define HARDWAREFEATURESREGADDR 0x01  // Hardware features available: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART, bit 3: RED channel only listen, bit 4: BLUE channel only listen, bit 5: Send mode
 #define SERIALNOREGADDR 0x02  // Serialno of the dongle
 #define ERRORCOUNTREGADDR 0x03  // No of errors
-#define STATUSREGADDR 0x04	  // Indicates what messages there is to fetch. bit 7: Error message, bit 0: Punch message
+#define STATUSREGADDR 0x04	// Run time status
+							// bit 7: Error message exists (1 = message exists)
+							// bit 1: The sendPunchQueue is full (1 = full)
+							// bit 0: Punch message received and is in queue waiting to be fetched (1 = message exists)
 #define SETDATAINDEXREGADDR 0x05  // Index to the block data a register
 #define HARDWAREFEATURESENABLEDISABLEREGADDR 0x06  // Hardware feature, enabled or disable: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART, bit 3: RED channel only listen, bit 4: BLUE channel only listen, bit 5: Send mode
 
@@ -48,6 +52,9 @@ struct Punch *I2CSlave_punchToSendPointer;
 struct Punch I2CSlave_punchToSendBuffer;
 
 uint8_t I2CSlave_PunchRecordSize = sizeof(struct Punch);
+uint8_t I2CSlave_SendPunchRecordSize = sizeof(struct SendPunch);
+volatile struct SendPunch I2CSlave_sendPunch;
+uint8_t volatile I2CSlave_sendPunchLength = 1;  // length is updated using the first byte received that contain the length
 //uint8_t I2CSlave_PunchLength = sizeof(struct Punch);
 uint8_t volatile I2CSlave_receivedRegister;
 uint8_t I2CSlave_hardwareFeaturesAvailable = 0x1F;
@@ -84,7 +91,7 @@ bool IsBlueChannelListenOnlyEnabled()
 	return (I2CSlave_hardwareFeaturesEnableDisable & I2CSLAVE_BLUECHANNELLISTENONLYBIT) > 0;
 }
 
-// Send mode note implemented yet
+// Send mode not implemented yet
 bool IsInSendMode()
 {
 	return (I2CSlave_hardwareFeaturesEnableDisable & I2CSLAVE_SENDMODEBIT) > 0;
@@ -308,14 +315,37 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 		}
 		case PUNCHREGADDR:
 		{
-			// this is not used now i guess, for sending punches?
-			//if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, ??, 1, I2C_FIRST_FRAME)) != HAL_OK)
-			//{
-			//	char msg[30];
-			//	sprintf(msg, "PUNCHREGADDR:ret: %u", status);
-			//	ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
-			//	Error_Handler();
-			//}
+			if (I2CSlave_ReceiveIndex < I2CSlave_sendPunchLength && I2CSlave_ReceiveIndex < I2CSlave_SendPunchRecordSize)
+			{
+				I2CSlave_ReceiveIndex++;
+				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, (uint8_t *)(&I2CSlave_sendPunch + I2CSlave_ReceiveIndex-1), 1, I2C_FIRST_FRAME)) != HAL_OK)
+				{
+					char msg[30];
+					sprintf(msg, "SERIALNOREGADDR:ret: %u", status);
+					ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
+
+					Error_Handler();
+				}
+				else
+				{
+					if (I2CSlave_ReceiveIndex == 1)
+					{
+						// received the payload length byte
+						I2CSlave_sendPunchLength = I2CSlave_sendPunch.payloadLength;
+					}
+				}
+			}
+			if (I2CSlave_ReceiveIndex == I2CSlave_sendPunchLength)
+			{
+				// The full punch received so put it into the queue
+				uint8_t enqueueResult = SendPunchQueue_enQueue(&outgoingPunchQueue, &I2CSlave_sendPunch);
+				if (enqueueResult == QUEUEISFULL)
+				{
+					// queue full
+					ErrorLog_log("HAL_I2C_SlaveRxCpltCallback", "Queue full");
+				}
+			}
+
 			break;
 		}
 	}
@@ -408,6 +438,11 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 				if (IRQLineHandler_GetErrorMessagesExist())
 				{
 					statusValToReturn |= 0x80;
+				}
+
+				if (SendPunchQueue_isFull(&outgoingPunchQueue))
+				{
+					statusValToReturn |= 0x02;
 				}
 
 				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &statusValToReturn, 1, I2C_LAST_FRAME)) != HAL_OK)

@@ -25,6 +25,7 @@
 #include "CC2500.h"
 #include <stdbool.h>
 #include "PunchQueue.h"
+#include "SendPunchQueue.h"
 #include "I2CSlave.h"
 #include <string.h>
 #include "ErrorLog.h"
@@ -78,8 +79,9 @@ static void MX_SPI2_Init(void);
 static void ReconfigureCC2500(void);
 static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPin ,uint8_t channel);
 static uint8_t GetPunchReplyIncludingSpaceForCommandByte(struct Punch punch, uint8_t * punchReply);
-static void AckSentEnableRX_RedChannel(void);
-static void AckSentEnableRX_BlueChannel(void);
+static void SendPunchMessages(void);
+static void EnableRX_RedChannel(void);
+static void EnableRX_BlueChannel(void);
 static void SendAckReply_RedChannel(void);
 static void SendAckReply_BlueChannel(void);
 static bool EnableI2CListen(void);
@@ -197,7 +199,7 @@ int main(void)
 	      {
 	    	  // The falling interrupt has not happened, something is amiss
 	    	  // Need to disable interrupt because FlushRXFifo will use SPI
-	    	   // and can't interupt write/read SPI (will result in HAL_BUSY)
+	    	  // and can't interrupt write/read SPI (will result in HAL_BUSY)
 	    	  HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
 	    	  CC2500_FlushRXFIFO(&hspi1, &RedChannelChipSelectPortPin);
 	    	  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
@@ -236,6 +238,11 @@ int main(void)
 		  ClearHasChannelConfigurationChanged();
 		  HAL_Delay(1);
 		  isInitialized = true;
+	  }
+
+	  if (IsInSendMode())
+	  {
+		  SendPunchMessages();
 	  }
 
 	  // go to sleep
@@ -839,6 +846,8 @@ static uint8_t GetPunchReplyIncludingSpaceForCommandByte(struct Punch punch, uin
 }
 
 struct Punch punch;
+bool MessageSentButNotAcked = false;
+bool LastAckReceivedOnRedChannel = true;
 static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin)
 {
 	uint8_t noOfRxBytes1 = 0;
@@ -882,16 +891,51 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 		if (punch.messageStatus.crc & 0x80)
 		{
 			// CRC OK!
-			punch.channel = chipSelectPortPin->Channel;
-			uint8_t enqueueResult = PunchQueue_enQueue(&incomingPunchQueue, &punch);
-			if (enqueueResult == QUEUEISFULL)
+			if (IsInSendMode())
 			{
-				// queue full so don't ack
-				ErrorLog_log("ReadMessage", "Queue full");
-				FlushRXFifo(phspi, chipSelectPortPin);
+				// We are in send mode so we expect it to be an ack, but it could be a punch message. Punch message should be ignored.
+				// Check payLoadLength, the value on index 9 is 0x23 for acks and 0x03 for messages (same for different types of punch message)
+				if (punch.payloadLength == 0x0D
+						&& punch.payload[9] == 0x23)
+				{
+					// Ack received
+					if (punch.payload[0] == I2CSlave_serialNumber[0] &&
+							punch.payload[1] == I2CSlave_serialNumber[1] &&
+							punch.payload[2] == I2CSlave_serialNumber[2] &&
+							punch.payload[3] == I2CSlave_serialNumber[3])
+					{
+						// ack for us
+						if (MessageSentButNotAcked)
+						{
+							MessageSentButNotAcked = false;
+							LastAckReceivedOnRedChannel = (chipSelectPortPin->Channel == REDCHANNEL);
+							//SendPunch punchFirstInQueue; // should be the last one sent, and not acked. (Or next one to send.)
+							//SendPunchQueue_deQueue(outgoingPunchQueue, &punchFirstInQueue);
+							SendPunchQueue_pop(&outgoingPunchQueue);
+						}
+					}
+
+				}
 				return false;
 			}
-			// when enqueueResult is  ENQUEUESUCCESS or SAMEPUNCH then punch should be acked (unless in listen only mode)
+			else
+			{
+				// We are in receive mode so we expect it to be a received punch message but it could be an ack, ignore acks
+				// Check that payLoadLength doesn't match an ack. The value on index 9 is 0x23 for acks and 0x03 for messages (same for different types of punch message)
+				if (punch.payloadLength != 0x0D	&& punch.payload[9] == 0x03)
+				{
+					punch.channel = chipSelectPortPin->Channel;
+					uint8_t enqueueResult = PunchQueue_enQueue(&incomingPunchQueue, &punch);
+					if (enqueueResult == QUEUEISFULL)
+					{
+						// queue full so don't ack
+						ErrorLog_log("ReadMessage", "Queue full");
+						FlushRXFifo(phspi, chipSelectPortPin);
+						return false;
+					}
+					// when enqueueResult is  ENQUEUESUCCESS or SAMEPUNCH then punch should be acked (unless in listen only mode)
+				}
+			}
 		} else {
 			FlushRXFifo(phspi, chipSelectPortPin);
 			return false;
@@ -994,7 +1038,122 @@ static void SendAckReply_BlueChannel()
 	CC2500_EnableTX(&hspi2, &BlueChannelChipSelectPortPin);
 }
 
-static void AckSentEnableRX_RedChannel()
+
+uint8_t sendBufferWithCommandByte[sizeof(struct SendPunch)+1] = {0};
+static void SendPunch_RedChannel()
+{
+	CC2500_ExitRXTX(&hspi1, &RedChannelChipSelectPortPin);
+	do {
+	} while (!CC2500_GetIsReadyAndIdle(&hspi1, &RedChannelChipSelectPortPin));  // while not chip ready and IDLE
+	CC2500_FlushRXFIFO(&hspi1, &RedChannelChipSelectPortPin);
+
+
+	sendBufferWithCommandByte[0] = 0;
+	SendPunchQueue_peek(&outgoingPunchQueue, (struct SendPunch *) &sendBufferWithCommandByte + 1);
+	uint8_t replyLength = sendBufferWithCommandByte[1]+2;
+	CC2500_WriteTXFifo(&hspi1, &RedChannelChipSelectPortPin, sendBufferWithCommandByte, replyLength);
+	MessageSentButNotAcked = true;
+
+	// Disable interrupt, change GDO0 to PA_PD
+	Configure_GDO_INT_1_AsGPIO();
+	CC2500_SetGDO0OutputPinConfiguration(&hspi1, &RedChannelChipSelectPortPin, GDOx_CFG_PA_PD);
+
+	CC2500_EnableRX(&hspi1, &RedChannelChipSelectPortPin);
+
+	uint8_t packetStatus;
+	do {
+		//for(int i=0;i<2000;i++); // add a abit of delay here?
+		packetStatus = CC2500_GetGDOxStatusAndPacketStatus(&hspi1, &RedChannelChipSelectPortPin);
+	} while (!(packetStatus & 0x10)); // wait for channel clear
+
+	// Enable rising interrupts for CC2500-GDO0
+	Configure_GDO_INT_1_AsRisingInterrupt();
+	HAL_NVIC_EnableIRQ(RedChannelChipSelectPortPin.InterruptIRQ);
+
+	CC2500_EnableTX(&hspi1, &RedChannelChipSelectPortPin);
+}
+
+static void SendPunch_BlueChannel()
+{
+	CC2500_ExitRXTX(&hspi2, &BlueChannelChipSelectPortPin);
+	do {
+	} while (!CC2500_GetIsReadyAndIdle(&hspi2, &BlueChannelChipSelectPortPin));  // while not chip ready and IDLE
+	CC2500_FlushRXFIFO(&hspi2, &BlueChannelChipSelectPortPin);
+
+
+	sendBufferWithCommandByte[0] = 0;
+	SendPunchQueue_peek(&outgoingPunchQueue, (struct SendPunch *) &sendBufferWithCommandByte + 1);
+	uint8_t replyLength = sendBufferWithCommandByte[1]+2;
+	CC2500_WriteTXFifo(&hspi2, &BlueChannelChipSelectPortPin, sendBufferWithCommandByte, replyLength);
+	MessageSentButNotAcked = true;
+
+	// Disable interrupt, change GDO0 to PA_PD
+	Configure_GDO_INT_2_AsGPIO();
+	CC2500_SetGDO0OutputPinConfiguration(&hspi2, &BlueChannelChipSelectPortPin, GDOx_CFG_PA_PD);
+
+	CC2500_EnableRX(&hspi2, &BlueChannelChipSelectPortPin);
+
+	uint8_t packetStatus;
+	do {
+		//for(int i=0;i<2000;i++); // add a abit of delay here?
+		packetStatus = CC2500_GetGDOxStatusAndPacketStatus(&hspi2, &BlueChannelChipSelectPortPin);
+	} while (!(packetStatus & 0x10)); // wait for channel clear
+
+	// Enable rising interrupts for CC2500-GDO0
+	Configure_GDO_INT_2_AsRisingInterrupt();
+	HAL_NVIC_EnableIRQ(BlueChannelChipSelectPortPin.InterruptIRQ);
+
+	CC2500_EnableTX(&hspi2, &BlueChannelChipSelectPortPin);
+}
+
+
+volatile uint32_t lastMessageSentTick;
+volatile uint8_t sendTryNumber = 0;
+static uint32_t GetElapsedTimeSinceLastMessageSentMS()
+{
+	return HAL_GetTick() - lastMessageSentTick;
+}
+
+static bool CheckIfTimeToSend(uint8_t tryNo)
+{
+	// tryNo is zero based
+	uint32_t messageIntervalTime = GetElapsedTimeSinceLastMessageSentMS();
+	double extraDelayCalc = 1.0;
+	for (int i = 0; i < tryNo; i++) {
+		extraDelayCalc *= 1.3;
+	}
+
+	return GetElapsedTimeSinceLastMessageSentMS() > messageIntervalTime * extraDelayCalc;
+}
+
+
+static void SendPunchMessages()
+{
+	if (!SendPunchQueue_isEmpty(&outgoingPunchQueue))
+	{
+		// There are punches to send in queue
+
+		if (CheckIfTimeToSend(sendTryNumber))
+		{
+
+			if ((LastAckReceivedOnRedChannel && (sendTryNumber % 2) == 0) ||
+				(!LastAckReceivedOnRedChannel && (sendTryNumber % 2) != 0))
+			{
+				SendPunch_RedChannel();
+			}
+			else
+			{
+				SendPunch_BlueChannel();
+			}
+
+			sendTryNumber++;
+			// Save the systick when message was sent
+			lastMessageSentTick = HAL_GetTick();
+		}
+	}
+}
+
+static void EnableRX_RedChannel()
 {
 	// must be in idle, but is probably in RX now...
 	CC2500_FlushTXFIFO(&hspi1, &RedChannelChipSelectPortPin);
@@ -1006,7 +1165,7 @@ static void AckSentEnableRX_RedChannel()
 	CC2500_EnableRX(&hspi1, &RedChannelChipSelectPortPin);
 }
 
-static void AckSentEnableRX_BlueChannel()
+static void EnableRX_BlueChannel()
 {
 	// must be in idle, but is probably in RX now...
 	CC2500_FlushTXFIFO(&hspi2, &BlueChannelChipSelectPortPin);
@@ -1083,7 +1242,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 			if (IsRedChannelEnabled()) {
 				//HAL_ResumeTick();
 				//SystemClock_Config();
-				AckSentEnableRX_RedChannel();
+				EnableRX_RedChannel();
 			}
 		}
 		else if(GPIO_Pin == GPIO_PIN_6) // PA6 - second CC2500
@@ -1091,7 +1250,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 			if (IsBlueChannelEnabled()) {
 				//HAL_ResumeTick();
 				//SystemClock_Config();
-				AckSentEnableRX_BlueChannel();
+				EnableRX_BlueChannel();
 			}
 		}
 	}
