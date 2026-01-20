@@ -6,7 +6,7 @@
  */
 
 #include "SendPunchQueue.h"
-
+#include "PunchQueue.h"
 
 volatile struct SendPunchQueue outgoingPunchQueue = { .SendPunchQueue_front = -1, .SendPunchQueue_rear = -1 };
 volatile struct SendPunch lastSendPunch;
