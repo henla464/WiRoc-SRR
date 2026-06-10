@@ -57,4 +57,40 @@ bool PunchQueue_peek(volatile struct PunchQueue * queue, struct Punch * punch);
 bool PunchQueue_pop(volatile struct PunchQueue * queue);
 bool PunchQueue_popSafe(volatile struct PunchQueue * queue, struct Punch * punchID);
 
+/*----------------------------------------------------------------------------*/
+/*  TX Punch types — punches received over I2C to be transmitted via CC2500  */
+/*----------------------------------------------------------------------------*/
+
+// I2C payload: Record type(1) + Length(1) + CN1(1) + CN0(1) + SI#(4)
+//            + Week/Day/AMPM(1) + TH(1) + TL(1) + TSS(1) + MEM2(1)
+//            + MEM1(1) + MEM0(1) = up to 15 bytes
+#define TXPUNCH_MAX_PAYLOAD_SIZE 15
+// I2C transfer: 1 length byte + up to TXPUNCH_MAX_PAYLOAD_SIZE payload bytes
+#define TXPUNCH_I2C_MAX_TRANSFER_SIZE (TXPUNCH_MAX_PAYLOAD_SIZE + 1)
+#define TX_PUNCHQUEUE_SIZE 10
+
+struct TxPunch {
+  uint8_t payloadLength;                       // actual payload length (from I2C length byte)
+  uint8_t payload[TXPUNCH_MAX_PAYLOAD_SIZE];   // raw I2C punch payload
+  uint8_t retryCount;
+  uint8_t lastSentChannel;                     // REDCHANNEL/BLUECHANNEL last tried, 0=never sent
+};
+
+struct TxPunchQueue {
+  struct TxPunch items[TX_PUNCHQUEUE_SIZE];
+  int8_t front;
+  int8_t rear;
+};
+
+volatile extern struct TxPunchQueue outgoingTxPunchQueue;
+extern volatile uint8_t txLastAckedChannel;  // channel last ACKed on (REDCHANNEL/BLUECHANNEL)
+
+uint8_t TxPunchQueue_getNoOfItems(volatile struct TxPunchQueue * queue);
+bool TxPunchQueue_isFull(volatile struct TxPunchQueue * queue);
+bool TxPunchQueue_isEmpty(volatile struct TxPunchQueue * queue);
+uint8_t TxPunchQueue_enQueue(volatile struct TxPunchQueue * queue, struct TxPunch * punch);
+bool TxPunchQueue_deQueue(volatile struct TxPunchQueue * queue, struct TxPunch * punch);
+bool TxPunchQueue_peek(volatile struct TxPunchQueue * queue, struct TxPunch * punch);
+bool TxPunchQueue_pop(volatile struct TxPunchQueue * queue);
+
 #endif /* INC_PUNCHQUEUE_H_ */

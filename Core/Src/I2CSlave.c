@@ -41,14 +41,17 @@
 #define PUNCHLENGTHREGADDR 0x20	  // Read punch message
 #define ERRORLENGTHREGADDR 0x27
 // Message data registers
-#define PUNCHREGADDR 0x40	  // Read punch message
+#define PUNCHREGADDR 0x40	  // Read/write punch message
 #define ERRORMSGREGADDR 0x47
 
 struct Punch *I2CSlave_punchToSendPointer;
 struct Punch I2CSlave_punchToSendBuffer;
 
+// Receive buffer for TxPunches received via I2C to be transmitted via CC2500
+struct TxPunch I2CSlave_punchReceiveBuffer;
+uint8_t volatile I2CSlave_txPayloadLength;  // total payload length from I2C length byte
+
 uint8_t I2CSlave_PunchRecordSize = sizeof(struct Punch);
-//uint8_t I2CSlave_PunchLength = sizeof(struct Punch);
 uint8_t volatile I2CSlave_receivedRegister;
 uint8_t I2CSlave_hardwareFeaturesAvailable = 0x1F;
 uint8_t volatile I2CSlave_hardwareFeaturesEnableDisable = 0x03;
@@ -308,14 +311,49 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 		}
 		case PUNCHREGADDR:
 		{
-			// this is not used now i guess, for sending punches?
-			//if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, ??, 1, I2C_FIRST_FRAME)) != HAL_OK)
-			//{
-			//	char msg[30];
-			//	sprintf(msg, "PUNCHREGADDR:ret: %u", status);
-			//	ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
-			//	Error_Handler();
-			//}
+			if (I2CSlave_ReceiveIndex == 0)
+			{
+				// First data byte: total payload length
+				I2CSlave_ReceiveIndex++;
+				if ((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle,
+						&I2CSlave_txPayloadLength, 1, I2C_FIRST_FRAME)) != HAL_OK)
+				{
+					char msg[30];
+					sprintf(msg, "PUNCHREGADDR:ret: %u", status);
+					ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
+					Error_Handler();
+				}
+			}
+			else if (I2CSlave_ReceiveIndex <= I2CSlave_txPayloadLength
+					&& I2CSlave_ReceiveIndex <= TXPUNCH_MAX_PAYLOAD_SIZE)
+			{
+				// Receiving a payload byte
+				I2CSlave_ReceiveIndex++;
+				if ((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle,
+						&I2CSlave_punchReceiveBuffer.payload[I2CSlave_ReceiveIndex - 2],
+						1, I2C_FIRST_FRAME)) != HAL_OK)
+				{
+					char msg[30];
+					sprintf(msg, "PUNCHREGADDR:ret: %u", status);
+					ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
+					Error_Handler();
+				}
+			}
+			if (I2CSlave_ReceiveIndex > I2CSlave_txPayloadLength
+				|| I2CSlave_ReceiveIndex > TXPUNCH_MAX_PAYLOAD_SIZE)
+			{
+				// All bytes received, enqueue for CC2500 transmission
+				uint8_t length = I2CSlave_txPayloadLength;
+				if (length > TXPUNCH_MAX_PAYLOAD_SIZE)
+				{
+					length = TXPUNCH_MAX_PAYLOAD_SIZE;
+				}
+				I2CSlave_punchReceiveBuffer.payloadLength = length;
+				I2CSlave_punchReceiveBuffer.retryCount = 0;
+				I2CSlave_punchReceiveBuffer.lastSentChannel = 0;
+				TxPunchQueue_enQueue(&outgoingTxPunchQueue, &I2CSlave_punchReceiveBuffer);
+				I2CSlave_ReceiveIndex = 0;
+			}
 			break;
 		}
 	}

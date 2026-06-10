@@ -6,10 +6,14 @@
  */
 
 #include "PunchQueue.h"
+#include "main.h"
 
 
 volatile struct PunchQueue incomingPunchQueue = { .PunchQueue_front = -1, .PunchQueue_rear = -1 };
 volatile struct Punch lastPunch;
+
+volatile struct TxPunchQueue outgoingTxPunchQueue = { .front = -1, .rear = -1 };
+volatile uint8_t txLastAckedChannel = BLUECHANNEL;  // initial default
 
 // Check if the queue is full
 uint8_t PunchQueue_getNoOfItems(struct PunchQueue * queue)
@@ -154,3 +158,107 @@ bool PunchQueue_pop(volatile struct PunchQueue * queue)
 	}
 }
 
+
+
+
+/*============================================================================*/
+/*  TxPunchQueue functions — for outgoing punches (I2C → CC2500)             */
+/*============================================================================*/
+
+uint8_t TxPunchQueue_getNoOfItems(volatile struct TxPunchQueue * queue)
+{
+	if (queue->front == -1)
+	{
+		return 0;
+	}
+	if (queue->rear < queue->front)
+	{
+		return TX_PUNCHQUEUE_SIZE - (queue->front - queue->rear) + 1;
+	}
+	else
+	{
+		return queue->rear - queue->front + 1;
+	}
+}
+
+bool TxPunchQueue_isFull(volatile struct TxPunchQueue * queue)
+{
+	if ((queue->front == queue->rear + 1)
+		  ||
+		  (queue->front == 0 && queue->rear == TX_PUNCHQUEUE_SIZE - 1))
+	{
+		return true;
+	}
+	return false;
+}
+
+bool TxPunchQueue_isEmpty(volatile struct TxPunchQueue * queue)
+{
+	if (queue->front == -1)
+	{
+		return true;
+	}
+	return false;
+}
+
+uint8_t TxPunchQueue_enQueue(volatile struct TxPunchQueue * queue, struct TxPunch * punch)
+{
+	if (TxPunchQueue_isFull(queue))
+	{
+		return QUEUEISFULL;
+	}
+	if (queue->front == -1)
+	{
+		queue->front = 0;
+	}
+	queue->rear = (queue->rear + 1) % TX_PUNCHQUEUE_SIZE;
+	queue->items[queue->rear] = *punch;
+	return ENQUEUESUCCESS;
+}
+
+bool TxPunchQueue_deQueue(volatile struct TxPunchQueue * queue, struct TxPunch * punch)
+{
+	if (TxPunchQueue_isEmpty(queue))
+	{
+		return false;
+	}
+	*punch = queue->items[queue->front];
+	if (queue->front == queue->rear)
+	{
+		queue->front = -1;
+		queue->rear = -1;
+	}
+	else
+	{
+		queue->front = (queue->front + 1) % TX_PUNCHQUEUE_SIZE;
+	}
+	return true;
+}
+
+bool TxPunchQueue_peek(volatile struct TxPunchQueue * queue, struct TxPunch * punch)
+{
+	if (TxPunchQueue_isEmpty(queue))
+	{
+		return false;
+	}
+	*punch = queue->items[queue->front];
+	return true;
+}
+
+bool TxPunchQueue_pop(volatile struct TxPunchQueue * queue)
+{
+	if (TxPunchQueue_isEmpty(queue))
+	{
+		return false;
+	}
+	if (queue->front == queue->rear)
+	{
+		queue->front = -1;
+		queue->rear = -1;
+	}
+	else
+	{
+		queue->front = (queue->front + 1) % TX_PUNCHQUEUE_SIZE;
+	}
+	return true;
+}
