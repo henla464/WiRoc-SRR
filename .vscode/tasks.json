@@ -1,0 +1,105 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build (Debug)",
+            "type": "shell",
+            "command": "make all -s -j$(nproc) 2>&1; if [ $? -eq 0 ] && [ -f SRRReceiver.elf ]; then arm-none-eabi-size SRRReceiver.elf; printf '\\n\\033[1;32m===== DEBUG BUILD SUCCESS =====\\033[0m\\n'; else printf '\\n\\033[1;31m===== DEBUG BUILD FAILED =====\\033[0m\\n'; exit 1; fi",
+            "options": {
+                "cwd": "${workspaceFolder}/Debug",
+                "env": {
+                    "PATH": "/opt/st/stm32cubeide_1.14.0/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.11.3.rel1.linux64_1.1.100.202309141235/tools/bin:${env:PATH}"
+                }
+            },
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": ["relative", "${workspaceFolder}/Debug"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            },
+            "presentation": { "clear": true, "panel": "shared" },
+            "group": { "kind": "build", "isDefault": true }
+        },
+        {
+            "label": "Rebuild Debug (Clean + Build)",
+            "type": "shell",
+            "command": "make clean > /dev/null 2>&1; make all -s -j$(nproc) 2>&1; if [ $? -eq 0 ] && [ -f SRRReceiver.elf ]; then arm-none-eabi-size SRRReceiver.elf; printf '\\n\\033[1;32m===== DEBUG REBUILD SUCCESS =====\\033[0m\\n'; else printf '\\n\\033[1;31m===== DEBUG REBUILD FAILED =====\\033[0m\\n'; exit 1; fi",
+            "options": {
+                "cwd": "${workspaceFolder}/Debug",
+                "env": {
+                    "PATH": "/opt/st/stm32cubeide_1.14.0/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.11.3.rel1.linux64_1.1.100.202309141235/tools/bin:${env:PATH}"
+                }
+            },
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": ["relative", "${workspaceFolder}/Debug"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            },
+            "presentation": { "clear": true, "panel": "shared" },
+            "group": "build"
+        },
+        {
+            "label": "Build (Release)",
+            "type": "shell",
+            "command": "make all -s -j$(nproc) 2>&1; if [ $? -eq 0 ] && [ -f SRRReceiver.elf ]; then arm-none-eabi-size SRRReceiver.elf; printf '\\n\\033[1;32m===== RELEASE BUILD SUCCESS =====\\033[0m\\n'; else printf '\\n\\033[1;31m===== RELEASE BUILD FAILED =====\\033[0m\\n'; exit 1; fi",
+            "options": {
+                "cwd": "${workspaceFolder}/Release",
+                "env": {
+                    "PATH": "/opt/st/stm32cubeide_1.14.0/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.11.3.rel1.linux64_1.1.100.202309141235/tools/bin:${env:PATH}"
+                }
+            },
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": ["relative", "${workspaceFolder}/Release"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            },
+            "presentation": { "clear": true, "panel": "shared" },
+            "group": "build"
+        },
+        {
+            "label": "Rebuild Release (Clean + Build)",
+            "type": "shell",
+            "command": "make clean > /dev/null 2>&1; make all -s -j$(nproc) 2>&1; if [ $? -eq 0 ] && [ -f SRRReceiver.elf ]; then arm-none-eabi-size SRRReceiver.elf; printf '\\n\\033[1;32m===== RELEASE REBUILD SUCCESS =====\\033[0m\\n'; else printf '\\n\\033[1;31m===== RELEASE REBUILD FAILED =====\\033[0m\\n'; exit 1; fi",
+            "options": {
+                "cwd": "${workspaceFolder}/Release",
+                "env": {
+                    "PATH": "/opt/st/stm32cubeide_1.14.0/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.11.3.rel1.linux64_1.1.100.202309141235/tools/bin:${env:PATH}"
+                }
+            },
+            "problemMatcher": {
+                "owner": "cpp",
+                "fileLocation": ["relative", "${workspaceFolder}/Release"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            },
+            "presentation": { "clear": true, "panel": "shared" },
+            "group": "build"
+        }
+    ]
+}
