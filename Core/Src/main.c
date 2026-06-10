@@ -79,8 +79,8 @@ static void MX_SPI2_Init(void);
 static void ReconfigureCC2500(void);
 static void InitCC2500(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPin ,uint8_t channel);
 static uint8_t GetPunchReplyIncludingSpaceForCommandByte(struct Punch punch, uint8_t * punchReply);
-static void AckSentEnableRX_RedChannel(void);
-static void AckSentEnableRX_BlueChannel(void);
+static void ResumeRX_RedChannel(void);
+static void ResumeRX_BlueChannel(void);
 static void SendAckReply_RedChannel(void);
 static void SendAckReply_BlueChannel(void);
 static bool EnableI2CListen(void);
@@ -1213,12 +1213,12 @@ static void ProcessOutgoingPunches(void)
 	}
 
 	// Note: ISR re-enabled inside SendPunch_*Channel above;
-	// the rising ISR will call AckSentEnableRX to clear txInProgress
+	// the rising ISR will call ResumeRX to clear txInProgress
 	// and switch back to RX mode
 }
 
 
-static void AckSentEnableRX_RedChannel()
+static void ResumeRX_RedChannel()
 {
 	// must be in idle, but is probably in RX now...
 	txInProgress = false;
@@ -1231,7 +1231,7 @@ static void AckSentEnableRX_RedChannel()
 	CC2500_EnableRX(&hspi1, &RedChannelChipSelectPortPin);
 }
 
-static void AckSentEnableRX_BlueChannel()
+static void ResumeRX_BlueChannel()
 {
 	// must be in idle, but is probably in RX now...
 	txInProgress = false;
@@ -1309,7 +1309,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 			if (IsRedChannelEnabled()) {
 				//HAL_ResumeTick();
 				//SystemClock_Config();
-				AckSentEnableRX_RedChannel();
+				ResumeRX_RedChannel();
 			}
 		}
 		else if(GPIO_Pin == GPIO_PIN_6) // PA6 - second CC2500
@@ -1317,7 +1317,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 			if (IsBlueChannelEnabled()) {
 				//HAL_ResumeTick();
 				//SystemClock_Config();
-				AckSentEnableRX_BlueChannel();
+				ResumeRX_BlueChannel();
 			}
 		}
 	}
