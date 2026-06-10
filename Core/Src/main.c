@@ -63,6 +63,7 @@ bool volatile RedChannelSyncWordInterrupt = false;
 bool volatile RedChannelSyncWordDetected = false;
 bool volatile BlueChannelSyncWordInterrupt = false;
 bool volatile BlueChannelSyncWordDetected = false;
+bool volatile txInProgress = false;  // true while a CC2500 TX is in progress on either channel
 struct PortAndPin RedChannelChipSelectPortPin = { .GPIOx = GPIOA, .GPIO_Pin = GPIO_PIN_15, .InterruptIRQ = EXTI4_15_IRQn, .Channel = REDCHANNEL};
 struct PortAndPin BlueChannelChipSelectPortPin = { .GPIOx = GPIOA, .GPIO_Pin = GPIO_PIN_5, .InterruptIRQ = EXTI4_15_IRQn, .Channel = BLUECHANNEL};
 /* USER CODE END PV */
@@ -89,8 +90,8 @@ static void InitializeBothCC2500(void);
 static void Configure_GDO_INT_1_AsFallingInterrupt(void);
 static void Configure_GDO_INT_2_AsFallingInterrupt(void);
 static uint8_t BuildRadioPacketFromTxPunch(struct TxPunch * txPunch);
-static void SendPunch_RedChannel(struct TxPunch * txPunch);
-static void SendPunch_BlueChannel(struct TxPunch * txPunch);
+static bool SendPunch_RedChannel(struct TxPunch * txPunch);
+static bool SendPunch_BlueChannel(struct TxPunch * txPunch);
 static uint8_t ChooseChannelForPunch(struct TxPunch * txPunch);
 static void ProcessOutgoingPunches(void);
 /* USER CODE END PFP */
@@ -675,6 +676,7 @@ static void InitializeBothCC2500()
 
 static void ReconfigureCC2500() {
 	HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
+	txInProgress = false;  // reconfig aborts any in-progress TX
 	Configure_GDO_INT_1_AsGPIO();
 	Configure_GDO_INT_2_AsGPIO();
 	if (IsRedChannelEnabled())
@@ -1048,7 +1050,7 @@ static void SendAckReply_BlueChannel()
 /*  SendPunch — transmit a TxPunch over CC2500 (I2C → radio)                */
 /*===========================================================================*/
 
-static void SendPunch_RedChannel(struct TxPunch * txPunch)
+static bool SendPunch_RedChannel(struct TxPunch * txPunch)
 {
 	CC2500_ExitRXTX(&hspi1, &RedChannelChipSelectPortPin);
 	do {
@@ -1056,7 +1058,11 @@ static void SendPunch_RedChannel(struct TxPunch * txPunch)
 	CC2500_FlushRXFIFO(&hspi1, &RedChannelChipSelectPortPin);
 
 	uint8_t packetLength = BuildRadioPacketFromTxPunch(txPunch);
-	CC2500_WriteTXFifo(&hspi1, &RedChannelChipSelectPortPin, txRadioPacket, packetLength - 1);
+	if (!CC2500_WriteTXFifo(&hspi1, &RedChannelChipSelectPortPin, txRadioPacket, packetLength - 1))
+	{
+		ErrorLog_log("SendPunch_RedChannel", "WriteTXFifo failed");
+		return false;
+	}
 
 	// Switch GDO0 to PA_PD so we get a rising edge when TX completes
 	Configure_GDO_INT_1_AsGPIO();
@@ -1074,12 +1080,14 @@ static void SendPunch_RedChannel(struct TxPunch * txPunch)
 	Configure_GDO_INT_1_AsRisingInterrupt();
 	HAL_NVIC_EnableIRQ(RedChannelChipSelectPortPin.InterruptIRQ);
 
+	txInProgress = true;
 	CC2500_EnableTX(&hspi1, &RedChannelChipSelectPortPin);
 
 	txPunch->lastSentChannel = REDCHANNEL;
+	return true;
 }
 
-static void SendPunch_BlueChannel(struct TxPunch * txPunch)
+static bool SendPunch_BlueChannel(struct TxPunch * txPunch)
 {
 	CC2500_ExitRXTX(&hspi2, &BlueChannelChipSelectPortPin);
 	do {
@@ -1087,7 +1095,11 @@ static void SendPunch_BlueChannel(struct TxPunch * txPunch)
 	CC2500_FlushRXFIFO(&hspi2, &BlueChannelChipSelectPortPin);
 
 	uint8_t packetLength = BuildRadioPacketFromTxPunch(txPunch);
-	CC2500_WriteTXFifo(&hspi2, &BlueChannelChipSelectPortPin, txRadioPacket, packetLength - 1);
+	if (!CC2500_WriteTXFifo(&hspi2, &BlueChannelChipSelectPortPin, txRadioPacket, packetLength - 1))
+	{
+		ErrorLog_log("SendPunch_BlueChannel", "WriteTXFifo failed");
+		return false;
+	}
 
 	// Switch GDO0 to PA_PD so we get a rising edge when TX completes
 	Configure_GDO_INT_2_AsGPIO();
@@ -1105,9 +1117,11 @@ static void SendPunch_BlueChannel(struct TxPunch * txPunch)
 	Configure_GDO_INT_2_AsRisingInterrupt();
 	HAL_NVIC_EnableIRQ(BlueChannelChipSelectPortPin.InterruptIRQ);
 
+	txInProgress = true;
 	CC2500_EnableTX(&hspi2, &BlueChannelChipSelectPortPin);
 
 	txPunch->lastSentChannel = BLUECHANNEL;
+	return true;
 }
 
 static uint8_t ChooseChannelForPunch(struct TxPunch * txPunch)
@@ -1146,6 +1160,11 @@ static void ProcessOutgoingPunches(void)
 	{
 		return;
 	}
+	if (txInProgress)
+	{
+		// Previous TX still in progress, wait for rising ISR
+		return;
+	}
 	if (TxPunchQueue_isEmpty(&outgoingTxPunchQueue))
 	{
 		return;
@@ -1175,28 +1194,34 @@ static void ProcessOutgoingPunches(void)
 	// Disable interrupts during SPI operations
 	HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
 
+	bool success;
 	if (channel == REDCHANNEL)
 	{
-		SendPunch_RedChannel(txPunch);
+		success = SendPunch_RedChannel(txPunch);
 	}
 	else
 	{
-		SendPunch_BlueChannel(txPunch);
+		success = SendPunch_BlueChannel(txPunch);
 	}
 
-	txPunch->retryCount++;
-	txPunch->lastSentChannel = channel;
-	// txLastAckedChannel is only updated when an ACK is actually received
-	// (see ISR path: ReadMessage_*Channel -> enqueue incoming punch)
+	if (success)
+	{
+		txPunch->retryCount++;
+		txPunch->lastSentChannel = channel;
+		// txLastAckedChannel is only updated when an ACK is actually received
+		// (see ISR path: ReadMessage_*Channel -> enqueue incoming punch)
+	}
 
 	// Note: ISR re-enabled inside SendPunch_*Channel above;
-	// the rising ISR will call AckSentEnableRX to switch back to RX mode
+	// the rising ISR will call AckSentEnableRX to clear txInProgress
+	// and switch back to RX mode
 }
 
 
 static void AckSentEnableRX_RedChannel()
 {
 	// must be in idle, but is probably in RX now...
+	txInProgress = false;
 	CC2500_FlushTXFIFO(&hspi1, &RedChannelChipSelectPortPin);
 	Configure_GDO_INT_1_AsGPIO();
 	CC2500_SetGDO0OutputPinConfiguration(&hspi1, &RedChannelChipSelectPortPin, GDOx_CFG_ASSERT_SYNC_WORD);
@@ -1209,6 +1234,7 @@ static void AckSentEnableRX_RedChannel()
 static void AckSentEnableRX_BlueChannel()
 {
 	// must be in idle, but is probably in RX now...
+	txInProgress = false;
 	CC2500_FlushTXFIFO(&hspi2, &BlueChannelChipSelectPortPin);
 	Configure_GDO_INT_2_AsGPIO();
 	CC2500_SetGDO0OutputPinConfiguration(&hspi2, &BlueChannelChipSelectPortPin, GDOx_CFG_ASSERT_SYNC_WORD);
