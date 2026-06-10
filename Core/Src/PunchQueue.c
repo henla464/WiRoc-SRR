@@ -14,9 +14,11 @@ volatile struct Punch lastPunch;
 
 volatile struct TxPunchQueue outgoingTxPunchQueue = { .front = -1, .rear = -1 };
 volatile uint8_t txLastAckedChannel = BLUECHANNEL;  // initial default
+volatile uint8_t txMessageSequenceNumber = 0;
+volatile uint8_t txPunchSequenceNumber = 0;
 
 // Check if the queue is full
-uint8_t PunchQueue_getNoOfItems(struct PunchQueue * queue)
+uint8_t PunchQueue_getNoOfItems(volatile struct PunchQueue * queue)
 {
 	if (queue->PunchQueue_front == -1)
 	{
@@ -243,6 +245,15 @@ bool TxPunchQueue_peek(volatile struct TxPunchQueue * queue, struct TxPunch * pu
 	}
 	*punch = queue->items[queue->front];
 	return true;
+}
+
+struct TxPunch * TxPunchQueue_peekPtr(volatile struct TxPunchQueue * queue)
+{
+	if (TxPunchQueue_isEmpty(queue))
+	{
+		return NULL;
+	}
+	return (struct TxPunch *)&queue->items[queue->front];
 }
 
 bool TxPunchQueue_pop(volatile struct TxPunchQueue * queue)

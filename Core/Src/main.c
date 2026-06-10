@@ -88,6 +88,11 @@ static void Configure_GDO_INT_2_AsGPIO(void);
 static void InitializeBothCC2500(void);
 static void Configure_GDO_INT_1_AsFallingInterrupt(void);
 static void Configure_GDO_INT_2_AsFallingInterrupt(void);
+static uint8_t BuildRadioPacketFromTxPunch(struct TxPunch * txPunch);
+static void SendPunch_RedChannel(struct TxPunch * txPunch);
+static void SendPunch_BlueChannel(struct TxPunch * txPunch);
+static uint8_t ChooseChannelForPunch(struct TxPunch * txPunch);
+static void ProcessOutgoingPunches(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -237,6 +242,8 @@ int main(void)
 		  HAL_Delay(1);
 		  isInitialized = true;
 	  }
+
+	  ProcessOutgoingPunches();
 
 	  // go to sleep
 	  //HAL_SuspendTick();
@@ -838,6 +845,48 @@ static uint8_t GetPunchReplyIncludingSpaceForCommandByte(struct Punch punch, uin
 	return 15;
 }
 
+
+// Radio packet buffer for outgoing punch transmissions
+// [cmd_placeholder][length][dest4][src4][PORT][DevInfo][MsgSeq][PunchSeq][payload...]
+// Max size = 1 + 1 + 4 + 4 + 1 + 1 + 1 + 1 + TXPUNCH_MAX_PAYLOAD_SIZE = 29
+#define TX_RADIO_PACKET_MAX_SIZE 29
+static uint8_t txRadioPacket[TX_RADIO_PACKET_MAX_SIZE];
+
+static uint8_t BuildRadioPacketFromTxPunch(struct TxPunch * txPunch)
+{
+	// Byte 0 is placeholder for SPI command (will be set to 0x7F by WriteTXFifo)
+	uint8_t idx = 1;
+	// Length byte: count of bytes after this byte (12 header + payload)
+	uint8_t length = 12 + txPunch->payloadLength;
+	txRadioPacket[idx++] = length;
+	// Destination address: "siok" = 0x73696F6B (fixed magic address)
+	txRadioPacket[idx++] = 0x73;
+	txRadioPacket[idx++] = 0x69;
+	txRadioPacket[idx++] = 0x6F;
+	txRadioPacket[idx++] = 0x6B;
+	// Source address: I2CSlave_serialNumber (dongle ID)
+	txRadioPacket[idx++] = I2CSlave_serialNumber[0];
+	txRadioPacket[idx++] = I2CSlave_serialNumber[1];
+	txRadioPacket[idx++] = I2CSlave_serialNumber[2];
+	txRadioPacket[idx++] = I2CSlave_serialNumber[3];
+	// PORT
+	txRadioPacket[idx++] = 0x3F;
+	// Device Info
+	txRadioPacket[idx++] = 0x03;
+	// Message sequence number (incremented for every CC2500 transmit attempt, including retries)
+	txMessageSequenceNumber++;
+	txRadioPacket[idx++] = txMessageSequenceNumber;
+	// Punch sequence number (incremented for each NEW punch sent)
+	txRadioPacket[idx++] = txPunchSequenceNumber;
+	// TxPunch payload (already contains record type, length, CN1, CN0, SI#, etc.)
+	for (uint8_t i = 0; i < txPunch->payloadLength; i++)
+	{
+		txRadioPacket[idx++] = txPunch->payload[i];
+	}
+	return idx; // total bytes in buffer including command placeholder
+}
+
+
 struct Punch punch;
 static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelectPortPin)
 {
@@ -993,6 +1042,157 @@ static void SendAckReply_BlueChannel()
 
 	CC2500_EnableTX(&hspi2, &BlueChannelChipSelectPortPin);
 }
+
+
+/*===========================================================================*/
+/*  SendPunch — transmit a TxPunch over CC2500 (I2C → radio)                */
+/*===========================================================================*/
+
+static void SendPunch_RedChannel(struct TxPunch * txPunch)
+{
+	CC2500_ExitRXTX(&hspi1, &RedChannelChipSelectPortPin);
+	do {
+	} while (!CC2500_GetIsReadyAndIdle(&hspi1, &RedChannelChipSelectPortPin));
+	CC2500_FlushRXFIFO(&hspi1, &RedChannelChipSelectPortPin);
+
+	uint8_t packetLength = BuildRadioPacketFromTxPunch(txPunch);
+	CC2500_WriteTXFifo(&hspi1, &RedChannelChipSelectPortPin, txRadioPacket, packetLength - 1);
+
+	// Switch GDO0 to PA_PD so we get a rising edge when TX completes
+	Configure_GDO_INT_1_AsGPIO();
+	CC2500_SetGDO0OutputPinConfiguration(&hspi1, &RedChannelChipSelectPortPin, GDOx_CFG_PA_PD);
+
+	CC2500_EnableRX(&hspi1, &RedChannelChipSelectPortPin);
+
+	// Wait for channel clear (CCA)
+	uint8_t packetStatus;
+	do {
+		packetStatus = CC2500_GetGDOxStatusAndPacketStatus(&hspi1, &RedChannelChipSelectPortPin);
+	} while (!(packetStatus & 0x10));
+
+	// Enable rising interrupt for TX-complete detection
+	Configure_GDO_INT_1_AsRisingInterrupt();
+	HAL_NVIC_EnableIRQ(RedChannelChipSelectPortPin.InterruptIRQ);
+
+	CC2500_EnableTX(&hspi1, &RedChannelChipSelectPortPin);
+
+	txPunch->lastSentChannel = REDCHANNEL;
+}
+
+static void SendPunch_BlueChannel(struct TxPunch * txPunch)
+{
+	CC2500_ExitRXTX(&hspi2, &BlueChannelChipSelectPortPin);
+	do {
+	} while (!CC2500_GetIsReadyAndIdle(&hspi2, &BlueChannelChipSelectPortPin));
+	CC2500_FlushRXFIFO(&hspi2, &BlueChannelChipSelectPortPin);
+
+	uint8_t packetLength = BuildRadioPacketFromTxPunch(txPunch);
+	CC2500_WriteTXFifo(&hspi2, &BlueChannelChipSelectPortPin, txRadioPacket, packetLength - 1);
+
+	// Switch GDO0 to PA_PD so we get a rising edge when TX completes
+	Configure_GDO_INT_2_AsGPIO();
+	CC2500_SetGDO0OutputPinConfiguration(&hspi2, &BlueChannelChipSelectPortPin, GDOx_CFG_PA_PD);
+
+	CC2500_EnableRX(&hspi2, &BlueChannelChipSelectPortPin);
+
+	// Wait for channel clear (CCA)
+	uint8_t packetStatus;
+	do {
+		packetStatus = CC2500_GetGDOxStatusAndPacketStatus(&hspi2, &BlueChannelChipSelectPortPin);
+	} while (!(packetStatus & 0x10));
+
+	// Enable rising interrupt for TX-complete detection
+	Configure_GDO_INT_2_AsRisingInterrupt();
+	HAL_NVIC_EnableIRQ(BlueChannelChipSelectPortPin.InterruptIRQ);
+
+	CC2500_EnableTX(&hspi2, &BlueChannelChipSelectPortPin);
+
+	txPunch->lastSentChannel = BLUECHANNEL;
+}
+
+static uint8_t ChooseChannelForPunch(struct TxPunch * txPunch)
+{
+	uint8_t channel;
+	if (txPunch->lastSentChannel == 0)
+	{
+		// First attempt: use the channel that last got an ACK
+		channel = txLastAckedChannel;
+	}
+	else if (txPunch->lastSentChannel == REDCHANNEL)
+	{
+		channel = BLUECHANNEL;
+	}
+	else
+	{
+		channel = REDCHANNEL;
+	}
+
+	// Fallback: if chosen channel is disabled, try the other
+	if (channel == REDCHANNEL && !IsRedChannelEnabled())
+	{
+		channel = BLUECHANNEL;
+	}
+	if (channel == BLUECHANNEL && !IsBlueChannelEnabled())
+	{
+		channel = REDCHANNEL;
+	}
+
+	return channel;
+}
+
+static void ProcessOutgoingPunches(void)
+{
+	if (!IsInSendMode())
+	{
+		return;
+	}
+	if (TxPunchQueue_isEmpty(&outgoingTxPunchQueue))
+	{
+		return;
+	}
+
+	struct TxPunch * txPunch = TxPunchQueue_peekPtr(&outgoingTxPunchQueue);
+	if (txPunch == NULL)
+	{
+		return;
+	}
+
+	uint8_t channel = ChooseChannelForPunch(txPunch);
+	if ((channel == REDCHANNEL && !IsRedChannelEnabled()) ||
+	    (channel == BLUECHANNEL && !IsBlueChannelEnabled()))
+	{
+		// Neither channel is enabled, abandon this punch
+		TxPunchQueue_pop(&outgoingTxPunchQueue);
+		return;
+	}
+
+	// Increment punch sequence number on first send attempt (not on retries)
+	if (txPunch->retryCount == 0)
+	{
+		txPunchSequenceNumber++;
+	}
+
+	// Disable interrupts during SPI operations
+	HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
+
+	if (channel == REDCHANNEL)
+	{
+		SendPunch_RedChannel(txPunch);
+	}
+	else
+	{
+		SendPunch_BlueChannel(txPunch);
+	}
+
+	txPunch->retryCount++;
+	txPunch->lastSentChannel = channel;
+	// txLastAckedChannel is only updated when an ACK is actually received
+	// (see ISR path: ReadMessage_*Channel -> enqueue incoming punch)
+
+	// Note: ISR re-enabled inside SendPunch_*Channel above;
+	// the rising ISR will call AckSentEnableRX to switch back to RX mode
+}
+
 
 static void AckSentEnableRX_RedChannel()
 {

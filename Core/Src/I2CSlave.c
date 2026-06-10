@@ -316,7 +316,7 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 				// First data byte: total payload length
 				I2CSlave_ReceiveIndex++;
 				if ((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle,
-						&I2CSlave_txPayloadLength, 1, I2C_FIRST_FRAME)) != HAL_OK)
+						(uint8_t *)&I2CSlave_txPayloadLength, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
 					char msg[30];
 					sprintf(msg, "PUNCHREGADDR:ret: %u", status);

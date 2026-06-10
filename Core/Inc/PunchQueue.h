@@ -47,7 +47,7 @@ struct PunchQueue {
 
 volatile extern struct PunchQueue incomingPunchQueue;
 
-uint8_t PunchQueue_getNoOfItems();
+uint8_t PunchQueue_getNoOfItems(volatile struct PunchQueue * queue);
 bool PunchQueue_isFull(volatile struct PunchQueue * queue);
 bool PunchQueue_isEmpty(volatile struct PunchQueue * queue);
 bool PunchQueue_isSamePunch(struct Punch * punch1, volatile struct Punch * punch2);
@@ -83,7 +83,9 @@ struct TxPunchQueue {
 };
 
 volatile extern struct TxPunchQueue outgoingTxPunchQueue;
-extern volatile uint8_t txLastAckedChannel;  // channel last ACKed on (REDCHANNEL/BLUECHANNEL)
+extern volatile uint8_t txLastAckedChannel;      // channel last ACKed on (REDCHANNEL/BLUECHANNEL)
+extern volatile uint8_t txMessageSequenceNumber;  // incremented for every CC2500 transmit attempt
+extern volatile uint8_t txPunchSequenceNumber;    // incremented for each NEW punch sent (not retries)
 
 uint8_t TxPunchQueue_getNoOfItems(volatile struct TxPunchQueue * queue);
 bool TxPunchQueue_isFull(volatile struct TxPunchQueue * queue);
@@ -91,6 +93,7 @@ bool TxPunchQueue_isEmpty(volatile struct TxPunchQueue * queue);
 uint8_t TxPunchQueue_enQueue(volatile struct TxPunchQueue * queue, struct TxPunch * punch);
 bool TxPunchQueue_deQueue(volatile struct TxPunchQueue * queue, struct TxPunch * punch);
 bool TxPunchQueue_peek(volatile struct TxPunchQueue * queue, struct TxPunch * punch);
+struct TxPunch * TxPunchQueue_peekPtr(volatile struct TxPunchQueue * queue);
 bool TxPunchQueue_pop(volatile struct TxPunchQueue * queue);
 
 #endif /* INC_PUNCHQUEUE_H_ */
