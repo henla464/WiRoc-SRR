@@ -671,12 +671,15 @@ void ProcessOutgoingPunches(void)
 	uint8_t lastSentChannel = txPunch->lastSentChannel;
 	HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 
-	// Max retries exhausted — abandon this punch
+	// Max retries exhausted — wait for final ACK grace period, then pop
 	if (retryCount >= MAX_TX_RETRIES)
 	{
-		HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
-		TxPunchQueue_pop(&outgoingTxPunchQueue);
-		HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+		if (HAL_GetTick() >= nextRetryTick)
+		{
+			HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
+			TxPunchQueue_pop(&outgoingTxPunchQueue);
+			HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+		}
 		return;
 	}
 
@@ -725,8 +728,17 @@ void ProcessOutgoingPunches(void)
 		txPunch->lastSentChannel = channel;
 
 		// Schedule next retry with exponential backoff
-		// Delays: 64, 128, 256, 512, 1024 ms (~2s total for 6 attempts)
-		uint32_t delayMs = 64U << (txPunch->retryCount - 1);
+		// Inter-retry delays: 64, 128, 256, 512, 1024 ms
+		// After final retry: 64 ms ACK grace period before abandoning
+		uint32_t delayMs;
+		if (txPunch->retryCount < MAX_TX_RETRIES)
+		{
+			delayMs = 64U << (txPunch->retryCount - 1);
+		}
+		else
+		{
+			delayMs = 64;
+		}
 		txPunch->nextRetryTick = HAL_GetTick() + delayMs;
 	}
 	else
