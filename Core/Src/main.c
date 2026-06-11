@@ -89,11 +89,40 @@ static void Configure_GDO_INT_2_AsGPIO(void);
 static void InitializeBothCC2500(void);
 static void Configure_GDO_INT_1_AsFallingInterrupt(void);
 static void Configure_GDO_INT_2_AsFallingInterrupt(void);
-static uint8_t BuildRadioPacketFromTxPunch(struct TxPunch * txPunch);
-static bool SendPunch_RedChannel(struct TxPunch * txPunch);
-static bool SendPunch_BlueChannel(struct TxPunch * txPunch);
-static uint8_t ChooseChannelForPunch(struct TxPunch * txPunch);
+static uint8_t BuildRadioPacketFromTxPunch(struct TxPunch * txPunch, uint8_t msgSeq);
+static bool SendPunch_RedChannel(struct TxPunch * txPunch, uint8_t msgSeq);
+static bool SendPunch_BlueChannel(struct TxPunch * txPunch, uint8_t msgSeq);
 static void ProcessOutgoingPunches(void);
+
+static uint8_t ChooseChannelForPunch(uint8_t lastSentChannel)
+{
+	uint8_t channel;
+	if (lastSentChannel == 0)
+	{
+		// First attempt: use the channel that last got an ACK
+		channel = txLastAckedChannel;
+	}
+	else if (lastSentChannel == REDCHANNEL)
+	{
+		channel = BLUECHANNEL;
+	}
+	else
+	{
+		channel = REDCHANNEL;
+	}
+
+	// Fallback: if chosen channel is disabled, try the other
+	if (channel == REDCHANNEL && !IsRedChannelEnabled())
+	{
+		channel = BLUECHANNEL;
+	}
+	if (channel == BLUECHANNEL && !IsBlueChannelEnabled())
+	{
+		channel = REDCHANNEL;
+	}
+
+	return channel;
+}
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -854,7 +883,7 @@ static uint8_t GetPunchReplyIncludingSpaceForCommandByte(struct Punch punch, uin
 #define TX_RADIO_PACKET_MAX_SIZE 29
 static uint8_t txRadioPacket[TX_RADIO_PACKET_MAX_SIZE];
 
-static uint8_t BuildRadioPacketFromTxPunch(struct TxPunch * txPunch)
+static uint8_t BuildRadioPacketFromTxPunch(struct TxPunch * txPunch, uint8_t msgSeq)
 {
 	// Byte 0 is placeholder for SPI command (will be set to 0x7F by WriteTXFifo)
 	uint8_t idx = 1;
@@ -875,9 +904,8 @@ static uint8_t BuildRadioPacketFromTxPunch(struct TxPunch * txPunch)
 	txRadioPacket[idx++] = 0x3F;
 	// Device Info
 	txRadioPacket[idx++] = 0x03;
-	// Message sequence number (incremented for every CC2500 transmit attempt, including retries)
-	txMessageSequenceNumber++;
-	txRadioPacket[idx++] = txMessageSequenceNumber;
+	// Message sequence number (passed in pre-incremented from caller)
+	txRadioPacket[idx++] = msgSeq;
 	// Punch sequence number (incremented for each NEW punch sent)
 	txRadioPacket[idx++] = txPunchSequenceNumber;
 	// TxPunch payload (already contains record type, length, CN1, CN0, SI#, etc.)
@@ -932,8 +960,25 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 		}
 		if (punch.messageStatus.crc & 0x80)
 		{
-			// CRC OK!
+			// CRC OK
 			punch.channel = chipSelectPortPin->Channel;
+
+			// Check if this is an ACK addressed to us
+			// ACK format: length 14, destination = our serial number
+			if (punch.payloadLength == 14
+				&& memcmp(punch.payload, (const void *)I2CSlave_serialNumber, 4) == 0)
+			{
+				// ACK for us — remove the front item from the outgoing TX queue
+				if (!TxPunchQueue_isEmpty(&outgoingTxPunchQueue))
+				{
+					TxPunchQueue_pop(&outgoingTxPunchQueue);
+				}
+				txLastAckedChannel = chipSelectPortPin->Channel;
+				// don't enqueue ACKs, don't send ACK reply back
+				return false;
+			}
+
+			// Not an ACK — enqueue as incoming punch
 			uint8_t enqueueResult = PunchQueue_enQueue(&incomingPunchQueue, &punch);
 			if (enqueueResult == QUEUEISFULL)
 			{
@@ -1060,14 +1105,14 @@ static void SendAckReply_BlueChannel()
 /*  SendPunch — transmit a TxPunch over CC2500 (I2C → radio)                */
 /*===========================================================================*/
 
-static bool SendPunch_RedChannel(struct TxPunch * txPunch)
+static bool SendPunch_RedChannel(struct TxPunch * txPunch, uint8_t msgSeq)
 {
 	CC2500_ExitRXTX(&hspi1, &RedChannelChipSelectPortPin);
 	do {
 	} while (!CC2500_GetIsReadyAndIdle(&hspi1, &RedChannelChipSelectPortPin));
 	CC2500_FlushRXFIFO(&hspi1, &RedChannelChipSelectPortPin);
 
-	uint8_t packetLength = BuildRadioPacketFromTxPunch(txPunch);
+	uint8_t packetLength = BuildRadioPacketFromTxPunch(txPunch, msgSeq);
 	if (!CC2500_WriteTXFifo(&hspi1, &RedChannelChipSelectPortPin, txRadioPacket, packetLength - 1))
 	{
 		ErrorLog_log("SendPunch_RedChannel", "WriteTXFifo failed");
@@ -1097,14 +1142,14 @@ static bool SendPunch_RedChannel(struct TxPunch * txPunch)
 	return true;
 }
 
-static bool SendPunch_BlueChannel(struct TxPunch * txPunch)
+static bool SendPunch_BlueChannel(struct TxPunch * txPunch, uint8_t msgSeq)
 {
 	CC2500_ExitRXTX(&hspi2, &BlueChannelChipSelectPortPin);
 	do {
 	} while (!CC2500_GetIsReadyAndIdle(&hspi2, &BlueChannelChipSelectPortPin));
 	CC2500_FlushRXFIFO(&hspi2, &BlueChannelChipSelectPortPin);
 
-	uint8_t packetLength = BuildRadioPacketFromTxPunch(txPunch);
+	uint8_t packetLength = BuildRadioPacketFromTxPunch(txPunch, msgSeq);
 	if (!CC2500_WriteTXFifo(&hspi2, &BlueChannelChipSelectPortPin, txRadioPacket, packetLength - 1))
 	{
 		ErrorLog_log("SendPunch_BlueChannel", "WriteTXFifo failed");
@@ -1134,36 +1179,6 @@ static bool SendPunch_BlueChannel(struct TxPunch * txPunch)
 	return true;
 }
 
-static uint8_t ChooseChannelForPunch(struct TxPunch * txPunch)
-{
-	uint8_t channel;
-	if (txPunch->lastSentChannel == 0)
-	{
-		// First attempt: use the channel that last got an ACK
-		channel = txLastAckedChannel;
-	}
-	else if (txPunch->lastSentChannel == REDCHANNEL)
-	{
-		channel = BLUECHANNEL;
-	}
-	else
-	{
-		channel = REDCHANNEL;
-	}
-
-	// Fallback: if chosen channel is disabled, try the other
-	if (channel == REDCHANNEL && !IsRedChannelEnabled())
-	{
-		channel = BLUECHANNEL;
-	}
-	if (channel == BLUECHANNEL && !IsBlueChannelEnabled())
-	{
-		channel = REDCHANNEL;
-	}
-
-	return channel;
-}
-
 static void ProcessOutgoingPunches(void)
 {
 	if (!IsInSendMode())
@@ -1175,54 +1190,90 @@ static void ProcessOutgoingPunches(void)
 		// Previous TX still in progress, wait for rising ISR
 		return;
 	}
+
+	// Snapshot queue state — minimal IRQ-disabled window
+	HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
 	if (TxPunchQueue_isEmpty(&outgoingTxPunchQueue))
 	{
+		HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 		return;
 	}
-
 	struct TxPunch * txPunch = TxPunchQueue_peekPtr(&outgoingTxPunchQueue);
 	if (txPunch == NULL)
 	{
+		HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+		return;
+	}
+	uint8_t retryCount = txPunch->retryCount;
+	uint32_t nextRetryTick = txPunch->nextRetryTick;
+	uint8_t lastSentChannel = txPunch->lastSentChannel;
+	HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+
+	// Max retries exhausted — abandon this punch
+	if (retryCount >= MAX_TX_RETRIES)
+	{
+		HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
+		TxPunchQueue_pop(&outgoingTxPunchQueue);
+		HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 		return;
 	}
 
-	uint8_t channel = ChooseChannelForPunch(txPunch);
+	// Exponential backoff: 64, 128, 256, 512, 1024 ms between retries
+	if (retryCount > 0 && HAL_GetTick() < nextRetryTick)
+	{
+		return;
+	}
+
+	uint8_t channel = ChooseChannelForPunch(lastSentChannel);
+
 	if ((channel == REDCHANNEL && !IsRedChannelEnabled()) ||
 	    (channel == BLUECHANNEL && !IsBlueChannelEnabled()))
 	{
 		// Neither channel is enabled, abandon this punch
+		HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
 		TxPunchQueue_pop(&outgoingTxPunchQueue);
+		HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 		return;
 	}
 
 	// Increment punch sequence number on first send attempt (not on retries)
-	if (txPunch->retryCount == 0)
+	if (retryCount == 0)
 	{
 		txPunchSequenceNumber++;
 	}
 
-	// Disable interrupts during SPI operations
+	txMessageSequenceNumber++;
+
+	// Re-disable interrupts for SPI and queue operations
 	HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
 
 	bool success;
 	if (channel == REDCHANNEL)
 	{
-		success = SendPunch_RedChannel(txPunch);
+		success = SendPunch_RedChannel(txPunch, txMessageSequenceNumber);
 	}
 	else
 	{
-		success = SendPunch_BlueChannel(txPunch);
+		success = SendPunch_BlueChannel(txPunch, txMessageSequenceNumber);
 	}
 
 	if (success)
 	{
 		txPunch->retryCount++;
 		txPunch->lastSentChannel = channel;
-		// txLastAckedChannel is only updated when an ACK is actually received
-		// (see ISR path: ReadMessage_*Channel -> enqueue incoming punch)
+
+		// Schedule next retry with exponential backoff
+		// Delays: 64, 128, 256, 512, 1024 ms (~2s total for 6 attempts)
+		uint32_t delayMs = 64U << (txPunch->retryCount - 1);
+		txPunch->nextRetryTick = HAL_GetTick() + delayMs;
+	}
+	else
+	{
+		// TX init failed — re-enable IRQ that SendPunch_*Channel didn't
+		HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 	}
 
-	// Note: ISR re-enabled inside SendPunch_*Channel above;
+	// If success, ISR was re-enabled inside SendPunch_*Channel above;
 	// the rising ISR will call ResumeRX to clear txInProgress
 	// and switch back to RX mode
 }

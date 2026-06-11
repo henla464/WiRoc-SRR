@@ -67,12 +67,14 @@ bool PunchQueue_pop(volatile struct PunchQueue * queue);
 // I2C transfer: 1 length byte + up to TXPUNCH_MAX_PAYLOAD_SIZE payload bytes
 #define TXPUNCH_I2C_MAX_TRANSFER_SIZE (TXPUNCH_MAX_PAYLOAD_SIZE + 1)
 #define TX_PUNCHQUEUE_SIZE 10
+#define MAX_TX_RETRIES 6
 
 struct TxPunch {
   uint8_t payloadLength;                       // actual payload length (from I2C length byte)
   uint8_t payload[TXPUNCH_MAX_PAYLOAD_SIZE];   // raw I2C punch payload
   uint8_t retryCount;
   uint8_t lastSentChannel;                     // REDCHANNEL/BLUECHANNEL last tried, 0=never sent
+  uint32_t nextRetryTick;                      // HAL_GetTick() value when next retry is allowed
 };
 
 struct TxPunchQueue {

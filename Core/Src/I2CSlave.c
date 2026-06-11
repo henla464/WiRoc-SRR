@@ -351,6 +351,7 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 				I2CSlave_punchReceiveBuffer.payloadLength = length;
 				I2CSlave_punchReceiveBuffer.retryCount = 0;
 				I2CSlave_punchReceiveBuffer.lastSentChannel = 0;
+				I2CSlave_punchReceiveBuffer.nextRetryTick = 0;
 				TxPunchQueue_enQueue(&outgoingTxPunchQueue, &I2CSlave_punchReceiveBuffer);
 				I2CSlave_ReceiveIndex = 0;
 			}
