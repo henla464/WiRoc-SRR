@@ -208,8 +208,6 @@ int main(void)
 	  }
 
 
-	  HAL_Delay(1);
-
 	  if (HasChannelConfigurationChanged())
 	  {
 		  ErrorLog_log("main","config changed012345678901234567890");
@@ -222,12 +220,9 @@ int main(void)
 
 	  ProcessOutgoingPunches();
 
-	  // go to sleep
-	  //HAL_SuspendTick();
-	  //HAL_PWR_EnableSleepOnExit();
-	  //HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
-	  //HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
-	  //HAL_ResumeTick();
+	  // Sleep until next interrupt (SysTick at 1ms, I2C, or EXTI)
+	  // Saves ~20 mA vs active spin-waiting
+	  __WFI();
 
     /* USER CODE END WHILE */
 

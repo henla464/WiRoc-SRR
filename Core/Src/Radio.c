@@ -789,8 +789,7 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 			// a falling edge and interrupt will not be stuck high
 			RedChannelSyncWordDetected = false;
 			if (IsRedChannelEnabled()) {
-				//HAL_ResumeTick();
-				//SystemClock_Config();
+
 				ReadMessage_RedChannel();
 			} else {
 				// If radio is active in receive but channel should be off then it is
@@ -814,8 +813,7 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 			// a falling edge and interrupt will not be stuck high
 			BlueChannelSyncWordDetected = false;
 			if (IsBlueChannelEnabled()) {
-				//HAL_ResumeTick();
-				//SystemClock_Config();
+
 				ReadMessage_BlueChannel();
 			} else {
 				// If radio is active in receive but channel should be off then it is
@@ -842,16 +840,14 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 		if(GPIO_Pin == GPIO_PIN_12) // PA12 - first CC2500
 		{
 			if (IsRedChannelEnabled()) {
-				//HAL_ResumeTick();
-				//SystemClock_Config();
+
 				ResumeRX_RedChannel();
 			}
 		}
 		else if(GPIO_Pin == GPIO_PIN_6) // PA6 - second CC2500
 		{
 			if (IsBlueChannelEnabled()) {
-				//HAL_ResumeTick();
-				//SystemClock_Config();
+
 				ResumeRX_BlueChannel();
 			}
 		}

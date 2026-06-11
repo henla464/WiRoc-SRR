@@ -156,3 +156,5 @@ with the receiver from host.
 - `volatile` for variables accessed from ISR + main loop
 - `struct Punch` = incoming (radio → I2C), `struct TxPunch` = outgoing (I2C → radio)
 - Important to send Ack to punches with minimal delay because sender expects quick reply - and goes to sleep if not recieved quickly
+- Main loop uses `__WFI()` to sleep the CPU between iterations — SysTick (1ms), I2C, and EXTI interrupts wake it.
+  Saves ~20 mA. Do not replace with `HAL_Delay()` — that would reintroduce active spin-waiting.
