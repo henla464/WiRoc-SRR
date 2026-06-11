@@ -429,12 +429,13 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 			if (punch.payloadLength == 14
 				&& memcmp(punch.payload, (const void *)I2CSlave_serialNumber, 4) == 0)
 			{
-				// ACK for us — remove the front item from the outgoing TX queue
-				if (!TxPunchQueue_isEmpty(&outgoingTxPunchQueue))
+				// Only pop if this ACK matches the front punch's last TX channel
+				struct TxPunch * txPunch = TxPunchQueue_peekPtr(&outgoingTxPunchQueue);
+				if (txPunch != NULL && txPunch->lastSentChannel == chipSelectPortPin->Channel)
 				{
 					TxPunchQueue_pop(&outgoingTxPunchQueue);
+					txLastAckedChannel = chipSelectPortPin->Channel;
 				}
-				txLastAckedChannel = chipSelectPortPin->Channel;
 				// don't enqueue ACKs, don't send ACK reply back
 				return false;
 			}
