@@ -31,7 +31,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -66,6 +66,7 @@ void Error_Handler(void);
 /* USER CODE BEGIN Private defines */
 #define REDCHANNEL 146
 #define BLUECHANNEL 186
+extern bool volatile isInitialized;
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus
