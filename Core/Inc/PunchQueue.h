@@ -50,12 +50,11 @@ volatile extern struct PunchQueue incomingPunchQueue;
 uint8_t PunchQueue_getNoOfItems(volatile struct PunchQueue * queue);
 bool PunchQueue_isFull(volatile struct PunchQueue * queue);
 bool PunchQueue_isEmpty(volatile struct PunchQueue * queue);
-bool PunchQueue_isSamePunch(struct Punch * punch1, volatile struct Punch * punch2);
+bool PunchQueue_isSamePunch(struct Punch * punch1, const struct Punch * punch2);
 uint8_t PunchQueue_enQueue(volatile struct PunchQueue * queue, struct Punch * punch);
 bool PunchQueue_deQueue(volatile struct PunchQueue * queue, struct Punch * punch);
 bool PunchQueue_peek(volatile struct PunchQueue * queue, struct Punch * punch);
 bool PunchQueue_pop(volatile struct PunchQueue * queue);
-bool PunchQueue_popSafe(volatile struct PunchQueue * queue, struct Punch * punchID);
 
 /*----------------------------------------------------------------------------*/
 /*  TX Punch types — punches received over I2C to be transmitted via CC2500  */

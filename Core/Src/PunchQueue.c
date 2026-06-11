@@ -10,7 +10,8 @@
 
 
 volatile struct PunchQueue incomingPunchQueue = { .PunchQueue_front = -1, .PunchQueue_rear = -1 };
-volatile struct Punch lastPunch;
+// ISR-context only — no volatile needed (Cortex-M0+ does not nest interrupts)
+static struct Punch lastPunch;
 
 volatile struct TxPunchQueue outgoingTxPunchQueue = { .front = -1, .rear = -1 };
 volatile uint8_t txLastAckedChannel = BLUECHANNEL;  // initial default
@@ -56,7 +57,7 @@ bool PunchQueue_isEmpty(volatile struct PunchQueue * queue)
 	return false;
 }
 
-bool PunchQueue_isSamePunch(struct Punch * punch1, volatile struct Punch * punch2)
+bool PunchQueue_isSamePunch(struct Punch * punch1, const struct Punch * punch2)
 {
 	uint8_t punchType1 = punch1->payload[PUNCHTYPE_INDEX_PAYLOAD];
 	uint32_t senderId1 = 0;

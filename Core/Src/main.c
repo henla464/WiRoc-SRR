@@ -994,7 +994,12 @@ static void SendAckReply_RedChannel()
 
 
 	uint8_t replyLength = GetPunchReplyIncludingSpaceForCommandByte(punch, PunchReply);
-	CC2500_WriteTXFifo(&hspi1, &RedChannelChipSelectPortPin, PunchReply, replyLength);
+	if (!CC2500_WriteTXFifo(&hspi1, &RedChannelChipSelectPortPin, PunchReply, replyLength))
+	{
+		ErrorLog_log("SendAckReply_RedChannel", "WriteTXFifo failed");
+		ResumeRX_RedChannel();
+		return;
+	}
 
 	// Disable interrupt, change GDO0 to PA_PD
 	Configure_GDO_INT_1_AsGPIO();
@@ -1024,7 +1029,12 @@ static void SendAckReply_BlueChannel()
 
 
 	uint8_t replyLength = GetPunchReplyIncludingSpaceForCommandByte(punch, PunchReply);
-	CC2500_WriteTXFifo(&hspi2, &BlueChannelChipSelectPortPin, PunchReply, replyLength);
+	if (!CC2500_WriteTXFifo(&hspi2, &BlueChannelChipSelectPortPin, PunchReply, replyLength))
+	{
+		ErrorLog_log("SendAckReply_BlueChannel", "WriteTXFifo failed");
+		ResumeRX_BlueChannel();
+		return;
+	}
 
 	// Disable interrupt, change GDO0 to PA_PD
 	Configure_GDO_INT_2_AsGPIO();
