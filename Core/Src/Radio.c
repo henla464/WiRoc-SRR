@@ -25,7 +25,7 @@ struct PortAndPin BlueChannelChipSelectPortPin = { .GPIOx = GPIOA, .GPIO_Pin = G
 uint8_t PunchReplySequenceNo = 1;
 uint8_t PunchReply[] = {0x00, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3F, 0x23, 0x00, 0x73, 0x60}; // first byte is SPI header byte
 
-#define TX_RADIO_PACKET_MAX_SIZE 29
+#define TX_RADIO_PACKET_MAX_SIZE 32
 static uint8_t txRadioPacket[TX_RADIO_PACKET_MAX_SIZE];
 
 struct Punch punch;
@@ -338,18 +338,14 @@ static uint8_t GetPunchReplyIncludingSpaceForCommandByte(struct Punch punch, uin
 }
 
 
-// Radio packet buffer for outgoing punch transmissions
-// [cmd_placeholder][length][dest4][src4][PORT][DevInfo][MsgSeq][PunchSeq][payload...]
-// Max size = 1 + 1 + 4 + 4 + 1 + 1 + 1 + 1 + TXPUNCH_MAX_PAYLOAD_SIZE = 29
-#define TX_RADIO_PACKET_MAX_SIZE 29
-static uint8_t txRadioPacket[TX_RADIO_PACKET_MAX_SIZE];
+// Max size = 1 + 1 + 4 + 4 + 1 + 1 + 1 + 1 + 3 + TXPUNCH_MAX_PAYLOAD_SIZE = 32
 
 static uint8_t BuildRadioPacketFromTxPunch(struct TxPunch * txPunch, uint8_t msgSeq)
 {
 	// Byte 0 is placeholder for SPI command (will be set to 0x7F by WriteTXFifo)
 	uint8_t idx = 1;
-	// Length byte: count of bytes after this byte (12 header + payload)
-	uint8_t length = 12 + txPunch->payloadLength;
+	// Length byte: count of bytes after this byte (15 header + payload)
+	uint8_t length = 15 + txPunch->payloadLength;
 	txRadioPacket[idx++] = length;
 	// Destination address: "siok" = 0x73696F6B (fixed magic address)
 	txRadioPacket[idx++] = 0x73;
@@ -369,6 +365,11 @@ static uint8_t BuildRadioPacketFromTxPunch(struct TxPunch * txPunch, uint8_t msg
 	txRadioPacket[idx++] = msgSeq;
 	// Punch sequence number (incremented for each NEW punch sent)
 	txRadioPacket[idx++] = txPunchSequenceNumber;
+	// don't know the meaning of these two bytes
+	txRadioPacket[idx++] = 0x62;
+	txRadioPacket[idx++] = 0x6A;
+	// Punch from SRR unit and from SI Air card different, SRR unit sends 0xB6
+	txRadioPacket[idx++] = 0xB6;
 	// TxPunch payload (already contains record type, length, CN1, CN0, SI#, etc.)
 	for (uint8_t i = 0; i < txPunch->payloadLength; i++)
 	{

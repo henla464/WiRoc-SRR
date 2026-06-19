@@ -30,7 +30,8 @@
 
 /*## REGISTER ADDRESSES ##*/
 #define FIRMWAREVERSIONREGADDR 0x00   // Version of the firmware
-#define HARDWAREFEATURESREGADDR 0x01  // Hardware features available: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART, bit 3: RED channel only listen, bit 4: BLUE channel only listen, bit 5: Send mode
+#define HARDWAREFEATURESREGADDR 0x01  // Hardware features available: 
+// bit 5: Send mode, bit 4: BLUE channel only listen || bit 3: RED channel only listen, bit 2: Send errors on UART, bit 1: BLUE Channel, bit 0: RED Channel
 #define SERIALNOREGADDR 0x02  // Serialno of the dongle
 #define ERRORCOUNTREGADDR 0x03  // No of errors
 #define STATUSREGADDR 0x04	  // Indicates what messages there is to fetch. bit 7: Error message, bit 0: Punch message
@@ -49,11 +50,11 @@ struct Punch I2CSlave_punchToSendBuffer;
 
 // Receive buffer for TxPunches received via I2C to be transmitted via CC2500
 struct TxPunch I2CSlave_punchReceiveBuffer;
-uint8_t volatile I2CSlave_txPayloadLength;  // total payload length from I2C length byte
+uint8_t volatile I2CSlave_txPayloadLength = 0xFF;  // total payload length from I2C length byte (0xFF = not yet received)
 
 uint8_t I2CSlave_PunchRecordSize = sizeof(struct Punch);
 uint8_t volatile I2CSlave_receivedRegister;
-uint8_t I2CSlave_hardwareFeaturesAvailable = 0x1F;
+uint8_t I2CSlave_hardwareFeaturesAvailable = 0x3F; // Send mode available, both channels available, send errors on UART available, listen only mode available for both channels
 uint8_t volatile I2CSlave_hardwareFeaturesEnableDisable = 0x03;
 uint8_t volatile I2CSlave_serialNumber[4] = {5, 6, 7, 8};
 uint8_t volatile I2CSlave_TransmitIndex = 0;
@@ -324,14 +325,24 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 					Error_Handler();
 				}
 			}
-			else if (I2CSlave_ReceiveIndex <= I2CSlave_txPayloadLength
-					&& I2CSlave_ReceiveIndex <= TXPUNCH_MAX_PAYLOAD_SIZE)
+			else if (I2CSlave_ReceiveIndex <= I2CSlave_txPayloadLength)
 			{
 				// Receiving a payload byte
 				I2CSlave_ReceiveIndex++;
+				uint8_t payloadIdx = I2CSlave_ReceiveIndex - 2;
+				uint8_t *destPtr;
+				if (payloadIdx < TXPUNCH_MAX_PAYLOAD_SIZE)
+				{
+					destPtr = &I2CSlave_punchReceiveBuffer.payload[payloadIdx];
+				}
+				else
+				{
+					// Byte beyond buffer capacity — discard into scratch
+					static uint8_t scratch;
+					destPtr = &scratch;
+				}
 				if ((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle,
-						&I2CSlave_punchReceiveBuffer.payload[I2CSlave_ReceiveIndex - 2],
-						1, I2C_FIRST_FRAME)) != HAL_OK)
+						destPtr, 1, I2C_FIRST_FRAME)) != HAL_OK)
 				{
 					char msg[30];
 					sprintf(msg, "PUNCHREGADDR:ret: %u", status);
@@ -339,8 +350,7 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 					Error_Handler();
 				}
 			}
-			if (I2CSlave_ReceiveIndex > I2CSlave_txPayloadLength
-				|| I2CSlave_ReceiveIndex > TXPUNCH_MAX_PAYLOAD_SIZE)
+			if (I2CSlave_ReceiveIndex > I2CSlave_txPayloadLength)
 			{
 				// All bytes received, enqueue for CC2500 transmission
 				uint8_t length = I2CSlave_txPayloadLength;
@@ -354,6 +364,7 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 				I2CSlave_punchReceiveBuffer.nextRetryTick = 0;
 				TxPunchQueue_enQueue(&outgoingTxPunchQueue, &I2CSlave_punchReceiveBuffer);
 				I2CSlave_ReceiveIndex = 0;
+				I2CSlave_txPayloadLength = 0xFF;
 			}
 			break;
 		}
