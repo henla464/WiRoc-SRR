@@ -29,6 +29,7 @@ extern bool volatile txInProgress;
 void InitializeBothCC2500(void);
 void ReconfigureCC2500(void);
 void ProcessOutgoingPunches(void);
+void ProcessTestModes(void);
 
 // HAL EXTI callbacks (override weak defaults)
 void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin);

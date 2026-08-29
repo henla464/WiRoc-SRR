@@ -28,6 +28,14 @@ uint8_t PunchReply[] = {0x00, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x
 #define TX_RADIO_PACKET_MAX_SIZE 32
 static uint8_t txRadioPacket[TX_RADIO_PACKET_MAX_SIZE];
 
+#ifdef TEST_MODES_ENABLED
+#define RADIO_READY_IDLE_MAX_LOOPS 1000U
+#define CARRIER_FILL_BYTES 64
+// Carrier fill data. Byte 0 is the SPI burst-write command placeholder that
+// CC2500_WriteTXFifo() overwrites with 0x7F; bytes 1..64 are the constant data.
+static uint8_t cwFillPacket[CARRIER_FILL_BYTES + 1];
+#endif
+
 struct Punch punch;
 
 void ReconfigureCC2500(void);
@@ -644,6 +652,13 @@ static bool SendPunch_BlueChannel(struct TxPunch * txPunch, uint8_t msgSeq)
 
 void ProcessOutgoingPunches(void)
 {
+#ifdef TEST_MODES_ENABLED
+	if (IsTestModeEnabled())
+	{
+		// Test mode owns the radios — no normal TX.
+		return;
+	}
+#endif
 	if (!IsInSendMode())
 	{
 		return;
@@ -754,6 +769,162 @@ void ProcessOutgoingPunches(void)
 }
 
 
+#ifdef TEST_MODES_ENABLED
+/*===========================================================================*/
+/*  Test modes — EU RED / EN 300 328 RF test support                         */
+/*===========================================================================*/
+
+// Transmit on the first enabled channel. For RF conformance testing, enable
+// exactly the channel under test in the features register (0x06).
+static uint8_t GetTestTxChannel(void)
+{
+	if (IsRedChannelEnabled())
+	{
+		return REDCHANNEL;
+	}
+	if (IsBlueChannelEnabled())
+	{
+		return BLUECHANNEL;
+	}
+	return 0;
+}
+
+static SPI_HandleTypeDef * TestChannelSpi(uint8_t channel)
+{
+	return (channel == REDCHANNEL) ? &hspi1 : &hspi2;
+}
+
+static struct PortAndPin * TestChannelPortPin(uint8_t channel)
+{
+	return (channel == REDCHANNEL) ? &RedChannelChipSelectPortPin : &BlueChannelChipSelectPortPin;
+}
+
+// Test mode 1: continuous unmodulated carrier. A constant data stream into the
+// MSK modulator produces a single tone. Infinite packet length + no preamble/
+// sync means the transmitter keeps emitting the FIFO contents, so the FIFO is
+// topped up continuously in MaintainCarrier().
+static void StartCarrier(uint8_t channel)
+{
+	if (channel == 0)
+	{
+		ErrorLog_log("StartCarrier", "no channel enabled");
+		return;
+	}
+
+	SPI_HandleTypeDef * phspi = TestChannelSpi(channel);
+	struct PortAndPin * cs = TestChannelPortPin(channel);
+
+	for (uint8_t i = 1; i < sizeof(cwFillPacket); i++)
+	{
+		cwFillPacket[i] = 0xFF;
+	}
+
+	// Stop RX interrupts while the radio is reconfigured for carrier mode.
+	HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
+	if (channel == REDCHANNEL)
+	{
+		Configure_GDO_INT_1_AsGPIO();
+	}
+	else
+	{
+		Configure_GDO_INT_2_AsGPIO();
+	}
+
+	CC2500_ExitRXTX(phspi, cs);
+	uint32_t idleLoops = 0;
+	do {
+		if (++idleLoops > RADIO_READY_IDLE_MAX_LOOPS)
+		{
+			ErrorLog_log("StartCarrier", "chip not ready/idle");
+			HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+			return;
+		}
+	} while (!CC2500_GetIsReadyAndIdle(phspi, cs));
+
+	CC2500_FlushTXFIFO(phspi, cs);
+
+	// Infinite packet length, no CRC/whitening, MSK with no sync word.
+	CC2500_SetPacketAutomationControl(phspi, cs, PKTCTRL0_INFINITE_PACKET_LENGTH);
+	CC2500_SetModemConfiguration2(phspi, cs, MDMCFG2_MOD_FORMAT_MSK | MDMCFG2_SYNC_MODE_NONE);
+
+	if (!CC2500_WriteTXFifo(phspi, cs, cwFillPacket, sizeof(cwFillPacket) - 1))
+	{
+		ErrorLog_log("StartCarrier", "WriteTXFifo failed");
+		HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+		return;
+	}
+
+	txInProgress = true;
+	CC2500_EnableTX(phspi, cs);
+	// EXTI stays disabled while the carrier runs; MaintainCarrier() keeps the
+	// TX FIFO topped up from the main loop.
+}
+
+static void MaintainCarrier(void)
+{
+	uint8_t channel = GetTestTxChannel();
+	if (channel == 0)
+	{
+		return;
+	}
+
+	SPI_HandleTypeDef * phspi = TestChannelSpi(channel);
+	struct PortAndPin * cs = TestChannelPortPin(channel);
+
+	// The 64-byte TX FIFO drains in ~2 ms at 250 kbps. Top it up before it
+	// underflows so the carrier stays continuous.
+	if (CC2500_GetNoOfTXBytes(phspi, cs) <= 32)
+	{
+		CC2500_WriteTXFifo(phspi, cs, cwFillPacket, 32);
+	}
+}
+
+static void ExitTestMode(void)
+{
+	// Flag the configuration as changed so the main loop's existing
+	// HasChannelConfigurationChanged() path runs ReconfigureCC2500() and
+	// restores normal RX + re-arms EXTI — the same path as any I2C config change.
+	SetChannelConfigurationChanged();
+}
+
+void ProcessTestModes(void)
+{
+	static bool testModeActive = false;
+
+	if (IsTestModeEnabled())
+	{
+		if (!testModeActive)
+		{
+			uint8_t mode = GetTestMode();
+			if (mode == TEST_MODE_TX_CARRIER)
+			{
+				StartCarrier(GetTestTxChannel());
+			}
+			else
+			{
+				char msg[40];
+				sprintf(msg, "unsupported test mode %u", (unsigned)mode);
+				ErrorLog_log("ProcessTestModes", msg);
+			}
+			testModeActive = true;
+		}
+		else
+		{
+			MaintainCarrier();
+		}
+	}
+	else
+	{
+		if (testModeActive)
+		{
+			ExitTestMode();
+			testModeActive = false;
+		}
+	}
+}
+#endif /* TEST_MODES_ENABLED */
+
+
 static void ResumeRX_RedChannel()
 {
 	// must be in idle, but is probably in RX now...
@@ -784,6 +955,13 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 {
 	if (isInitialized)
 	{
+#ifdef TEST_MODES_ENABLED
+		if (IsTestModeEnabled())
+		{
+			// Test mode owns the radios — ignore RX sync-word interrupts.
+			return;
+		}
+#endif
 		if(GPIO_Pin == GPIO_PIN_12) // PA12 - first CC2500
 		{
 			// We should reset RedChannelSyncWordDetected now that we received
@@ -838,6 +1016,13 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
 	if (isInitialized)
 	{
+#ifdef TEST_MODES_ENABLED
+		if (IsTestModeEnabled())
+		{
+			// Test mode owns the radios — ignore TX-complete interrupts.
+			return;
+		}
+#endif
 		if(GPIO_Pin == GPIO_PIN_12) // PA12 - first CC2500
 		{
 			if (IsRedChannelEnabled()) {
