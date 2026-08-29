@@ -108,6 +108,26 @@ int main(void)
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
 
+  /* Log the reset cause at boot so a reset storm (Error_Handler ->
+   * HAL_NVIC_SystemReset) can be told apart from a normal power-on. Sent to the
+   * UART unconditionally (terminal) and stored via ErrorLog_log (I2C). */
+  /*{
+    const char * cause;
+    if      (RCC->CSR & RCC_CSR_SFTRSTF)  cause = "SOFTWARE reset";
+    else if (RCC->CSR & RCC_CSR_PINRSTF)  cause = "PIN reset";
+    else if (RCC->CSR & RCC_CSR_IWDGRSTF) cause = "IWDG reset";
+    else if (RCC->CSR & RCC_CSR_WWDGRSTF) cause = "WWDG reset";
+    else if (RCC->CSR & RCC_CSR_OBLRSTF)  cause = "Option-byte reset";
+    else if (RCC->CSR & RCC_CSR_LPWRRSTF) cause = "Low-power reset";
+    else                                  cause = "POR/BOR (power-on)";
+    char rstMsg[64];
+    sprintf(rstMsg, "Boot cause: %s (CSR=0x%08lX)\r\n", cause, (unsigned long)RCC->CSR);
+    HAL_UART_Transmit(&huart1, (uint8_t *)rstMsg, strlen(rstMsg), 100);
+    ErrorLog_log("boot", rstMsg);
+    __HAL_RCC_CLEAR_RESET_FLAGS();
+  }
+  */
+
   HAL_GPIO_WritePin(GPIOA, RedChannelChipSelectPortPin.GPIO_Pin, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOA, BlueChannelChipSelectPortPin.GPIO_Pin, GPIO_PIN_SET);
 
@@ -219,6 +239,10 @@ int main(void)
 	  }
 
 	  ProcessOutgoingPunches();
+
+#ifdef TEST_MODES_ENABLED
+	  ProcessTestModes();
+#endif
 
 	  // Sleep until next interrupt (SysTick at 1ms, I2C, or EXTI)
 	  // Saves ~20 mA vs active spin-waiting

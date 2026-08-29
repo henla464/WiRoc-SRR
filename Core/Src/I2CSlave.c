@@ -26,17 +26,19 @@
 #define I2CSLAVE_REDCHANNELLISTENONLYBIT 0b00001000
 #define I2CSLAVE_BLUECHANNELLISTENONLYBIT 0b00010000
 #define I2CSLAVE_SENDMODEBIT 0b00100000
+#define I2CSLAVE_TESTMODEBIT 0b01000000
 
 
 /*## REGISTER ADDRESSES ##*/
 #define FIRMWAREVERSIONREGADDR 0x00   // Version of the firmware
-#define HARDWAREFEATURESREGADDR 0x01  // Hardware features available: 
-// bit 5: Send mode, bit 4: BLUE channel only listen || bit 3: RED channel only listen, bit 2: Send errors on UART, bit 1: BLUE Channel, bit 0: RED Channel
+#define HARDWAREFEATURESREGADDR 0x01  // Hardware features available:
+// bit 6: EU RED test modes, bit 5: Send mode, bit 4: BLUE channel only listen || bit 3: RED channel only listen, bit 2: Send errors on UART, bit 1: BLUE Channel, bit 0: RED Channel
 #define SERIALNOREGADDR 0x02  // Serialno of the dongle
 #define ERRORCOUNTREGADDR 0x03  // No of errors
 #define STATUSREGADDR 0x04	  // Indicates what messages there is to fetch. bit 7: Error message, bit 0: Punch message
 #define SETDATAINDEXREGADDR 0x05  // Index to the block data a register
-#define HARDWAREFEATURESENABLEDISABLEREGADDR 0x06  // Hardware feature, enabled or disable: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART, bit 3: RED channel only listen, bit 4: BLUE channel only listen, bit 5: Send mode
+#define HARDWAREFEATURESENABLEDISABLEREGADDR 0x06  // Hardware feature, enabled or disable: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART, bit 3: RED channel only listen, bit 4: BLUE channel only listen, bit 5: Send mode, bit 6: Test mode enable/disable
+#define TESTMODEREGADDR 0x07  // Which test mode to run (see TEST_MODE_* in I2CSlave.h); enabled/disabled by bit 6 of HARDWAREFEATURESENABLEDISABLEREGADDR
 
 // Length registers
 #define PUNCHLENGTHREGADDR 0x20	  // Read punch message
@@ -54,12 +56,19 @@ uint8_t volatile I2CSlave_txPayloadLength = 0xFF;  // total payload length from 
 
 uint8_t I2CSlave_PunchRecordSize = sizeof(struct Punch);
 uint8_t volatile I2CSlave_receivedRegister;
-uint8_t I2CSlave_hardwareFeaturesAvailable = 0x3F; // Send mode available, both channels available, send errors on UART available, listen only mode available for both channels
+#ifdef TEST_MODES_ENABLED
+uint8_t I2CSlave_hardwareFeaturesAvailable = 0x3F | I2CSLAVE_TESTMODEBIT; // ... + EU RED test modes available (bit 6)
+#else
+uint8_t I2CSlave_hardwareFeaturesAvailable = 0x3F; // ... test modes (bit 6) NOT available
+#endif
 uint8_t volatile I2CSlave_hardwareFeaturesEnableDisable = 0x03;
 uint8_t volatile I2CSlave_serialNumber[4] = {5, 6, 7, 8};
 uint8_t volatile I2CSlave_TransmitIndex = 0;
 uint8_t volatile I2CSlave_ReceiveIndex = 0;
 bool volatile channelConfigurationChanged = false;
+#ifdef TEST_MODES_ENABLED
+uint8_t volatile I2CSlave_testMode = TEST_MODE_TX_CARRIER; // only takes effect when test mode is enabled (bit 6 of enable/disable reg)
+#endif
 
 uint8_t volatile I2CSlave_previousHardwareFeaturesEnableDisable = 0x03;
 
@@ -93,6 +102,18 @@ bool IsInSendMode()
 {
 	return (I2CSlave_hardwareFeaturesEnableDisable & I2CSLAVE_SENDMODEBIT) > 0;
 }
+
+bool IsTestModeEnabled()
+{
+	return (I2CSlave_hardwareFeaturesEnableDisable & I2CSLAVE_TESTMODEBIT) > 0;
+}
+
+#ifdef TEST_MODES_ENABLED
+uint8_t GetTestMode()
+{
+	return I2CSlave_testMode;
+}
+#endif
 
 bool HasChannelConfigurationChanged()
 {
@@ -147,7 +168,9 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 		}
 		case SERIALNOREGADDR:
 		{
-			if (I2CSlave_TransmitIndex < sizeof(I2CSlave_serialNumber))
+			// Guard with +1 so we never send serialNumber[4] (the byte past the
+			// array, which is the adjacent I2CSlave_testMode variable).
+			if (I2CSlave_TransmitIndex + 1 < sizeof(I2CSlave_serialNumber))
 			{
 				I2CSlave_TransmitIndex++;
 				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, (uint8_t *) &I2CSlave_serialNumber[I2CSlave_TransmitIndex], 1, I2C_FIRST_FRAME)) != HAL_OK)
@@ -296,6 +319,35 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 			}
 			break;
 		}
+#ifdef TEST_MODES_ENABLED
+		case TESTMODEREGADDR:
+		{
+			if (I2CSlave_ReceiveIndex <= 0) {
+				I2CSlave_ReceiveIndex++;
+				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, (uint8_t *)&I2CSlave_testMode, 1, I2C_FIRST_FRAME)) != HAL_OK)
+				{
+					char msg[30];
+					sprintf(msg, "TESTMODEREGADDR:ret: %u", status);
+					ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
+					Error_Handler();
+				}
+			} else {
+				// Data byte just landed in I2CSlave_testMode. This register is
+				// documented to only ever hold TEST_MODE_* (0x01..0x04). Clamp
+				// anything else (e.g. a channel number such as REDCHANNEL=146
+				// written here by mistake) back to a valid mode, so a bogus value
+				// can never be read back over I2C and never reach ProcessTestModes().
+				if (I2CSlave_testMode < TEST_MODE_TX_CARRIER || I2CSlave_testMode > TEST_MODE_RX_TEST)
+				{
+					char msg[40];
+					sprintf(msg, "clamped invalid mode 0x%02X", (unsigned)I2CSlave_testMode);
+					ErrorLog_log("TESTMODEREGADDR", msg);
+					I2CSlave_testMode = TEST_MODE_TX_CARRIER;
+				}
+			}
+			break;
+		}
+#endif
 		case SETDATAINDEXREGADDR:
 		{
 			if (I2CSlave_ReceiveIndex <= 0) {
@@ -422,6 +474,19 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 				}
 				break;
 			}
+#ifdef TEST_MODES_ENABLED
+			case TESTMODEREGADDR:
+			{
+				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, (uint8_t *)&I2CSlave_testMode, 1, I2C_LAST_FRAME)) != HAL_OK)
+				{
+					char msg[100];
+					sprintf(msg, "TESTMODEREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_AddrCallback", msg);
+					Error_Handler();
+				}
+				break;
+			}
+#endif
 			case SERIALNOREGADDR:
 			{
 				I2CSlave_TransmitIndex=0;

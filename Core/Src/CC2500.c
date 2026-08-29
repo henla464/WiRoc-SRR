@@ -72,6 +72,14 @@ bool CC2500_WriteReadBytesSPI(SPI_HandleTypeDef* hspi, struct PortAndPin * chipS
 	if ( (status = HAL_SPI_TransmitReceive(hspi, writeValues, readValues, length, 100 )) != HAL_OK)
 	{
 		HAL_GPIO_WritePin(chipSelectPin->GPIOx, chipSelectPin->GPIO_Pin, GPIO_PIN_SET);
+
+		// On the HAL_ERROR path the HAL leaves hspi->State = BUSY_TX_RX and
+		// ErrorCode set, so every later transfer returns HAL_BUSY (poisoned).
+		// DeInit/Init disables then re-enables SPE, which clears a stuck BSY/FIFO
+		// and rebuilds a clean READY handle.
+		HAL_SPI_DeInit(hspi);
+		HAL_SPI_Init(hspi);
+
 		char msg[50];
 		sprintf(msg, "ret: %u", status);
 		ErrorLog_log("CC2500_WriteReadBytesSPI", msg);

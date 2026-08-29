@@ -67,6 +67,11 @@ void Error_Handler(void);
 #define REDCHANNEL 146
 #define BLUECHANNEL 186
 extern bool volatile isInitialized;
+
+/* Compile-time option: EU RED / EN 300 328 RF test modes (I2C register 0x07).
+ * Comment out the line below to remove all test-mode code. When disabled the
+ * test-mode bit in HARDWAREFEATURES (0x01) is cleared so a host can detect it. */
+//#define TEST_MODES_ENABLED
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus
