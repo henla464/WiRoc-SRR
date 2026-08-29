@@ -34,6 +34,14 @@ static uint8_t txRadioPacket[TX_RADIO_PACKET_MAX_SIZE];
 // Carrier fill data. Byte 0 is the SPI burst-write command placeholder that
 // CC2500_WriteTXFifo() overwrites with 0x7F; bytes 1..64 are the constant data.
 static uint8_t cwFillPacket[CARRIER_FILL_BYTES + 1];
+
+// Test mode 2 (TX_AA_LOOP) packet: a normal variable-length packet whose data
+// field is filled with 0xAA. Layout: byte 0 = SPI command placeholder, byte 1 =
+// length byte, bytes 2..64 = 0xAA data. 63 data bytes keeps length+data within
+// the 64-byte TX FIFO and is longer than a normal punch (~30 bytes).
+#define AA_LOOP_DATA_BYTES 63U
+#define AA_LOOP_INTER_PACKET_DELAY_MS 0U
+static uint8_t aaFillPacket[AA_LOOP_DATA_BYTES + 2];
 #endif
 
 struct Punch punch;
@@ -799,6 +807,23 @@ static struct PortAndPin * TestChannelPortPin(uint8_t channel)
 	return (channel == REDCHANNEL) ? &RedChannelChipSelectPortPin : &BlueChannelChipSelectPortPin;
 }
 
+// GDO0 pin for a channel (both live on GPIOA). Used to poll TX completion when
+// GDO0 is configured as PA_PD.
+static uint16_t TestChannelGdoPin(uint8_t channel)
+{
+	return (channel == REDCHANNEL) ? GPIO_PIN_12 : GPIO_PIN_6;
+}
+
+typedef enum
+{
+	AA_LOOP_STATE_TX_ACTIVE,  // packet in flight; poll GDO0 for PA_PD high
+	AA_LOOP_STATE_DELAY       // inter-packet delay; send next when it elapses
+} AALoopState_t;
+
+static uint8_t       aaLoopChannel = 0;
+static AALoopState_t aaLoopState = AA_LOOP_STATE_TX_ACTIVE;
+static uint32_t      aaLoopDelayEndTick = 0;
+
 // Test mode 1: continuous unmodulated carrier. A constant data stream into the
 // MSK modulator produces a single tone. Infinite packet length + no preamble/
 // sync means the transmitter keeps emitting the FIFO contents, so the FIFO is
@@ -879,6 +904,113 @@ static void MaintainCarrier(void)
 	}
 }
 
+// Load the pre-built 0xAA packet into the TX FIFO and start transmission.
+// Called once by StartAALoop() and then again from MaintainAALoop() after each
+// inter-packet delay.
+static void SendAAPacket(void)
+{
+	SPI_HandleTypeDef * phspi = TestChannelSpi(aaLoopChannel);
+	struct PortAndPin * cs = TestChannelPortPin(aaLoopChannel);
+
+	CC2500_ExitRXTX(phspi, cs);
+	uint32_t idleLoops = 0;
+	do {
+		if (++idleLoops > RADIO_READY_IDLE_MAX_LOOPS)
+		{
+			ErrorLog_log("SendAAPacket", "chip not ready/idle");
+			return;
+		}
+	} while (!CC2500_GetIsReadyAndIdle(phspi, cs));
+
+	CC2500_FlushTXFIFO(phspi, cs);
+	if (!CC2500_WriteTXFifo(phspi, cs, aaFillPacket, AA_LOOP_DATA_BYTES + 1))
+	{
+		ErrorLog_log("SendAAPacket", "WriteTXFifo failed");
+		return;
+	}
+	CC2500_EnableTX(phspi, cs);
+}
+
+// Test mode 2: continuous loop of 0xAA-filled packets. Packets keep the normal
+// format (sync word + variable length + CRC), but the data field is all-0xAA
+// and longer than a normal punch. GDO0 is switched to PA_PD so completion can
+// be polled (PA_PD goes high when the PA powers down after each packet).
+static void StartAALoop(uint8_t channel)
+{
+	if (channel == 0)
+	{
+		ErrorLog_log("StartAALoop", "no channel enabled");
+		return;
+	}
+
+	aaLoopChannel = channel;
+
+	// Build the all-0xAA packet once; byte 1 is the variable-length byte.
+	aaFillPacket[1] = AA_LOOP_DATA_BYTES;
+	for (uint8_t i = 2; i < sizeof(aaFillPacket); i++)
+	{
+		aaFillPacket[i] = 0xAA;
+	}
+
+	SPI_HandleTypeDef * phspi = TestChannelSpi(channel);
+	struct PortAndPin * cs = TestChannelPortPin(channel);
+
+	// Stop RX interrupts while the loop runs; GDO0 becomes PA_PD for polling.
+	HAL_NVIC_DisableIRQ(EXTI4_15_IRQn);
+	if (channel == REDCHANNEL)
+	{
+		Configure_GDO_INT_1_AsGPIO();
+	}
+	else
+	{
+		Configure_GDO_INT_2_AsGPIO();
+	}
+
+	// Move to IDLE so GDO0 can be reconfigured.
+	CC2500_ExitRXTX(phspi, cs);
+	uint32_t idleLoops = 0;
+	do {
+		if (++idleLoops > RADIO_READY_IDLE_MAX_LOOPS)
+		{
+			ErrorLog_log("StartAALoop", "chip not ready/idle");
+			HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+			return;
+		}
+	} while (!CC2500_GetIsReadyAndIdle(phspi, cs));
+
+	CC2500_SetGDO0OutputPinConfiguration(phspi, cs, GDOx_CFG_PA_PD);
+
+	txInProgress = true;
+	aaLoopState = AA_LOOP_STATE_TX_ACTIVE;
+	SendAAPacket();
+}
+
+static void MaintainAALoop(void)
+{
+	if (aaLoopChannel == 0)
+	{
+		return;
+	}
+
+	if (aaLoopState == AA_LOOP_STATE_TX_ACTIVE)
+	{
+		// GDO0 = PA_PD is high when the PA is powered down, i.e. TX complete.
+		if (HAL_GPIO_ReadPin(GPIOA, TestChannelGdoPin(aaLoopChannel)) == GPIO_PIN_SET)
+		{
+			aaLoopState = AA_LOOP_STATE_DELAY;
+			aaLoopDelayEndTick = HAL_GetTick() + AA_LOOP_INTER_PACKET_DELAY_MS;
+		}
+	}
+	else // AA_LOOP_STATE_DELAY
+	{
+		if ((int32_t)(HAL_GetTick() - aaLoopDelayEndTick) >= 0)
+		{
+			aaLoopState = AA_LOOP_STATE_TX_ACTIVE;
+			SendAAPacket();
+		}
+	}
+}
+
 static void ExitTestMode(void)
 {
 	// Flag the configuration as changed so the main loop's existing
@@ -890,15 +1022,41 @@ static void ExitTestMode(void)
 void ProcessTestModes(void)
 {
 	static bool testModeActive = false;
+	static uint8_t activeMode = 0;
+	static uint8_t activeChannel = 0;
 
 	if (IsTestModeEnabled())
 	{
-		if (!testModeActive)
+		uint8_t mode = GetTestMode();
+		uint8_t channel = GetTestTxChannel();
+
+		// (Re)start when test mode is entered, the mode changes, or the enabled
+		// channel changes (e.g. 0x41 red -> 0x42 blue). A channel change also
+		// triggers the main loop's ReconfigureCC2500(), which powers down the
+		// old channel and leaves the new one in normal RX; restarting here then
+		// reconfigures the new channel for the active test mode.
+		if (!testModeActive || activeMode != mode || activeChannel != channel)
 		{
-			uint8_t mode = GetTestMode();
+			activeMode = mode;
+			activeChannel = channel;
+			testModeActive = true;
+
+			if (channel == 0)
+			{
+				// No enabled channel to transmit on. Park the AA-loop state so
+				// it doesn't keep driving a stale channel; it will restart on
+				// the next channel change.
+				aaLoopChannel = 0;
+				return;
+			}
+
 			if (mode == TEST_MODE_TX_CARRIER)
 			{
-				StartCarrier(GetTestTxChannel());
+				StartCarrier(channel);
+			}
+			else if (mode == TEST_MODE_TX_AA_LOOP)
+			{
+				StartAALoop(channel);
 			}
 			else
 			{
@@ -906,11 +1064,17 @@ void ProcessTestModes(void)
 				sprintf(msg, "unsupported test mode %u", (unsigned)mode);
 				ErrorLog_log("ProcessTestModes", msg);
 			}
-			testModeActive = true;
 		}
 		else
 		{
-			MaintainCarrier();
+			if (mode == TEST_MODE_TX_CARRIER)
+			{
+				MaintainCarrier();
+			}
+			else if (mode == TEST_MODE_TX_AA_LOOP)
+			{
+				MaintainAALoop();
+			}
 		}
 	}
 	else
@@ -919,6 +1083,9 @@ void ProcessTestModes(void)
 		{
 			ExitTestMode();
 			testModeActive = false;
+			activeMode = 0;
+			activeChannel = 0;
+			aaLoopChannel = 0;
 		}
 	}
 }
