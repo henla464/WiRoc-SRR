@@ -40,5 +40,10 @@ extern void SetChannelConfigurationChanged(void);
 
 extern uint8_t GetTestMode(void);
 extern bool IsTestModeEnabled(void);
+// True when a test mode is actively driving the radios with a test signal
+// (carrier or 0xAA loop). Test mode 3 (periodic normal punch) keeps normal
+// radio operation, so this returns false for it — and false when test mode
+// is disabled entirely.
+extern bool IsTestSignalModeActive(void);
 
 #endif /* INC_I2CSLAVE_H_ */

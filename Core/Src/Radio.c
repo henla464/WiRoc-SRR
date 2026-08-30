@@ -42,6 +42,11 @@ static uint8_t cwFillPacket[CARRIER_FILL_BYTES + 1];
 #define AA_LOOP_DATA_BYTES 63U
 #define AA_LOOP_INTER_PACKET_DELAY_MS 0U
 static uint8_t aaFillPacket[AA_LOOP_DATA_BYTES + 2];
+
+// Test mode 3 (TX_NORMAL_5S): enqueue a normal punch into the TX queue every
+// 5 seconds and let ProcessOutgoingPunches() send it through the normal path.
+#define TEST_MODE3_INTERVAL_MS 5000U
+#define TEST_MODE3_PAYLOAD_LENGTH TXPUNCH_MAX_PAYLOAD_SIZE
 #endif
 
 struct Punch punch;
@@ -661,13 +666,25 @@ static bool SendPunch_BlueChannel(struct TxPunch * txPunch, uint8_t msgSeq)
 void ProcessOutgoingPunches(void)
 {
 #ifdef TEST_MODES_ENABLED
-	if (IsTestModeEnabled())
+	if (IsTestSignalModeActive())
 	{
-		// Test mode owns the radios — no normal TX.
+		// Test modes 1 & 2 own the radios — no normal TX. Test mode 3 runs
+		// through here so its queued punches are sent normally.
 		return;
 	}
 #endif
-	if (!IsInSendMode())
+
+	// Normal operation requires send mode (bit 5). In test mode 3 the periodic
+	// punch must also go out without send mode, since the test mode itself is
+	// the trigger for sending.
+	bool sendGateOpen = IsInSendMode();
+#ifdef TEST_MODES_ENABLED
+	if (!sendGateOpen && IsTestModeEnabled() && GetTestMode() == TEST_MODE_TX_NORMAL_5S)
+	{
+		sendGateOpen = true;
+	}
+#endif
+	if (!sendGateOpen)
 	{
 		return;
 	}
@@ -823,6 +840,11 @@ typedef enum
 static uint8_t       aaLoopChannel = 0;
 static AALoopState_t aaLoopState = AA_LOOP_STATE_TX_ACTIVE;
 static uint32_t      aaLoopDelayEndTick = 0;
+
+// Test mode 3 state. The punch is built once in StartNormalPeriodic() and
+// re-enqueued (by value) every TEST_MODE3_INTERVAL_MS in MaintainNormalPeriodic().
+static struct TxPunch testMode3Punch;
+static uint32_t periodicNextSendTick = 0;
 
 // Test mode 1: continuous unmodulated carrier. A constant data stream into the
 // MSK modulator produces a single tone. Infinite packet length + no preamble/
@@ -1019,6 +1041,64 @@ static void ExitTestMode(void)
 	SetChannelConfigurationChanged();
 }
 
+// Test mode 3: periodically send a normal punch using the existing TX path.
+// Build the punch payload once (normal station punch format) and arm the timer
+// so the first punch is enqueued immediately on entering the mode.
+static void StartNormalPeriodic(void)
+{
+	testMode3Punch.payloadLength = TEST_MODE3_PAYLOAD_LENGTH;
+
+	// Normal I2C punch payload layout (see PunchQueue.h):
+	testMode3Punch.payload[0] = 0xD3;         // record type
+	testMode3Punch.payload[1] = 0x0D; 		  // payload length
+	testMode3Punch.payload[2] = 0x00;         // CN1
+	testMode3Punch.payload[3] = 0x20;         // CN0  control no: 32
+	testMode3Punch.payload[4] = 0x00;         // SI# 25447
+	testMode3Punch.payload[5] = 0x00;         // SI#
+	testMode3Punch.payload[6] = 0x63;         // SI#
+	testMode3Punch.payload[7] = 0x67;         // SI#
+	testMode3Punch.payload[8] = 0x36;         // Weekday AM/PM
+	testMode3Punch.payload[9] = 0x90;         // TH
+	testMode3Punch.payload[10] = 0x0A;        // TL
+	testMode3Punch.payload[11] = 0xCD;        // TSS
+	testMode3Punch.payload[12] = 0x00;        // MEM2
+	testMode3Punch.payload[13] = 0x01;        // MEM3
+	testMode3Punch.payload[14] = 0xCD;        // MEM4
+	
+	testMode3Punch.retryCount = 0;
+	testMode3Punch.lastSentChannel = 0;
+	testMode3Punch.nextRetryTick = 0;
+
+	// Send the first punch as soon as the main loop reaches ProcessTestModes().
+	periodicNextSendTick = 0;
+}
+
+static void MaintainNormalPeriodic(void)
+{
+	if ((int32_t)(HAL_GetTick() - periodicNextSendTick) < 0)
+	{
+		return;  // interval not yet elapsed
+	}
+
+	static uint16_t testMode3PunchSequenceNumber = 0;
+
+	// Reset per-punch state and enqueue a fresh copy for the normal send path.
+	testMode3Punch.retryCount = 0;
+	testMode3Punch.lastSentChannel = 0;
+	testMode3Punch.nextRetryTick = 0;
+
+
+	testMode3Punch.payload[10] = testMode3PunchSequenceNumber % 256; // TL
+	testMode3Punch.payload[11] = testMode3PunchSequenceNumber % 256; // TSS
+	testMode3Punch.payload[14] = (testMode3PunchSequenceNumber*2) % 256; // MEM0
+	if (TxPunchQueue_enQueue(&outgoingTxPunchQueue, &testMode3Punch) == QUEUEISFULL)
+	{
+		ErrorLog_log("MaintainNormalPeriodic", "TX queue full");
+	}
+	testMode3PunchSequenceNumber++;
+	periodicNextSendTick = HAL_GetTick() + TEST_MODE3_INTERVAL_MS;
+}
+
 void ProcessTestModes(void)
 {
 	static bool testModeActive = false;
@@ -1030,16 +1110,37 @@ void ProcessTestModes(void)
 		uint8_t mode = GetTestMode();
 		uint8_t channel = GetTestTxChannel();
 
-		// (Re)start when test mode is entered, the mode changes, or the enabled
-		// channel changes (e.g. 0x41 red -> 0x42 blue). A channel change also
-		// triggers the main loop's ReconfigureCC2500(), which powers down the
-		// old channel and leaves the new one in normal RX; restarting here then
-		// reconfigures the new channel for the active test mode.
-		if (!testModeActive || activeMode != mode || activeChannel != channel)
+		// For modes 1 & 2 the radios are bound to a single channel, so restart
+		// on mode OR enabled-channel change (e.g. 0x41 red -> 0x42 blue). A
+		// channel change also triggers the main loop's ReconfigureCC2500(), which
+		// powers down the old channel and leaves the new one in normal RX;
+		// restarting here then reconfigures the new channel for the test mode.
+		//
+		// Mode 3 (periodic normal punch) uses the normal send path and is
+		// channel-agnostic, so it only (re)starts when the mode changes.
+		bool restartNeeded;
+		if (mode == TEST_MODE_TX_NORMAL_5S)
+		{
+			restartNeeded = (!testModeActive) || (activeMode != mode);
+		}
+		else
+		{
+			restartNeeded = (!testModeActive) || (activeMode != mode) || (activeChannel != channel);
+		}
+
+		if (restartNeeded)
 		{
 			activeMode = mode;
 			activeChannel = channel;
 			testModeActive = true;
+
+			if (mode == TEST_MODE_TX_NORMAL_5S)
+			{
+				// No channel lock-in or radio reconfiguration required; the
+				// normal ProcessOutgoingPunches() path sends the queued punches.
+				StartNormalPeriodic();
+				return;
+			}
 
 			if (channel == 0)
 			{
@@ -1075,6 +1176,10 @@ void ProcessTestModes(void)
 			{
 				MaintainAALoop();
 			}
+			else if (mode == TEST_MODE_TX_NORMAL_5S)
+			{
+				MaintainNormalPeriodic();
+			}
 		}
 	}
 	else
@@ -1086,6 +1191,7 @@ void ProcessTestModes(void)
 			activeMode = 0;
 			activeChannel = 0;
 			aaLoopChannel = 0;
+			periodicNextSendTick = 0;
 		}
 	}
 }
@@ -1123,9 +1229,9 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 	if (isInitialized)
 	{
 #ifdef TEST_MODES_ENABLED
-		if (IsTestModeEnabled())
+		if (IsTestSignalModeActive())
 		{
-			// Test mode owns the radios — ignore RX sync-word interrupts.
+			// Test modes 1 & 2 own the radios — ignore RX sync-word interrupts.
 			return;
 		}
 #endif
@@ -1184,9 +1290,9 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 	if (isInitialized)
 	{
 #ifdef TEST_MODES_ENABLED
-		if (IsTestModeEnabled())
+		if (IsTestSignalModeActive())
 		{
-			// Test mode owns the radios — ignore TX-complete interrupts.
+			// Test modes 1 & 2 own the radios — ignore TX-complete interrupts.
 			return;
 		}
 #endif

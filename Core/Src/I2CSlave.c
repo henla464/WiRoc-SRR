@@ -108,6 +108,18 @@ bool IsTestModeEnabled()
 	return (I2CSlave_hardwareFeaturesEnableDisable & I2CSLAVE_TESTMODEBIT) > 0;
 }
 
+bool IsTestSignalModeActive()
+{
+#ifdef TEST_MODES_ENABLED
+	// Test modes 1 (carrier) and 2 (0xAA loop) drive the radios with a test
+	// signal, so normal RX/TX must be suppressed. Test mode 3 (periodic normal
+	// punch) keeps normal radio operation, so this returns false for it.
+	return IsTestModeEnabled() && GetTestMode() != TEST_MODE_TX_NORMAL_5S;
+#else
+	return false;
+#endif
+}
+
 #ifdef TEST_MODES_ENABLED
 uint8_t GetTestMode()
 {

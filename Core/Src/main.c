@@ -190,7 +190,7 @@ int main(void)
 
 	  // Check if red chip is hanging with interrupt high
 	  GPIO_PinState redInt = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_12);
-	  if (!IsTestModeEnabled() && redInt == GPIO_PIN_SET && RedChannelSyncWordInterrupt)
+	  if (!IsTestSignalModeActive() && redInt == GPIO_PIN_SET && RedChannelSyncWordInterrupt)
 	  {
 		  // Sync word detected, wait enough time to receive the message
 		  RedChannelSyncWordDetected = true;
@@ -209,7 +209,7 @@ int main(void)
 	  }
 
 	  GPIO_PinState blueInt = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_6);
-	  if (!IsTestModeEnabled() && blueInt == GPIO_PIN_SET && BlueChannelSyncWordInterrupt)
+	  if (!IsTestSignalModeActive() && blueInt == GPIO_PIN_SET && BlueChannelSyncWordInterrupt)
 	  {
 		  // Sync word detected, wait enough time to receive the message
 		  BlueChannelSyncWordDetected = true;
