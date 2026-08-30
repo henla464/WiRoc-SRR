@@ -17,6 +17,8 @@ volatile struct TxPunchQueue outgoingTxPunchQueue = { .front = -1, .rear = -1 };
 volatile uint8_t txLastAckedChannel = BLUECHANNEL;  // initial default
 volatile uint8_t txMessageSequenceNumber = 0;
 volatile uint8_t txPunchSequenceNumber = 0;
+volatile uint16_t txMessagesAcked = 0;
+volatile uint16_t txMessagesSent = 0;
 
 // Check if the queue is full
 uint8_t PunchQueue_getNoOfItems(volatile struct PunchQueue * queue)

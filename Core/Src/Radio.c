@@ -28,6 +28,13 @@ uint8_t PunchReply[] = {0x00, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x
 #define TX_RADIO_PACKET_MAX_SIZE 32
 static uint8_t txRadioPacket[TX_RADIO_PACKET_MAX_SIZE];
 
+// Safety bound for every CC2500 polling wait loop. One loop iteration is one or
+// two byte SPI transactions at ~4 MHz, so 10000 iterations is ~50-100 ms. These
+// waits run both in the main loop and inside the EXTI4_15 ISR; EXTI4_15 is at
+// priority 0, the same as I2C1, so an unbounded wait there freezes the whole
+// firmware and the I2C slave stops answering.
+#define RADIO_POLL_MAX_LOOPS 10000U
+
 #ifdef TEST_MODES_ENABLED
 #define RADIO_READY_IDLE_MAX_LOOPS 1000U
 #define CARRIER_FILL_BYTES 64
@@ -43,10 +50,11 @@ static uint8_t cwFillPacket[CARRIER_FILL_BYTES + 1];
 #define AA_LOOP_INTER_PACKET_DELAY_MS 0U
 static uint8_t aaFillPacket[AA_LOOP_DATA_BYTES + 2];
 
-// Test mode 3 (TX_NORMAL_5S): enqueue a normal punch into the TX queue every
-// 5 seconds and let ProcessOutgoingPunches() send it through the normal path.
-#define TEST_MODE3_INTERVAL_MS 5000U
+// Test mode 3 (TX_NORMAL_5S): enqueue a normal punch into the TX queue on an
+// interval (default 5 s, configurable via I2C TESTMODE3DELAYREGADDR in tenths
+// of a second) and let ProcessOutgoingPunches() send it through the normal path.
 #define TEST_MODE3_PAYLOAD_LENGTH TXPUNCH_MAX_PAYLOAD_SIZE
+static bool mode3SendLogged = false;  // one-shot "punch actually sent" diagnostic
 #endif
 
 struct Punch punch;
@@ -446,9 +454,27 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 			// CRC OK
 			punch.channel = chipSelectPortPin->Channel;
 
+			// Diagnostic: capture every CRC-OK packet for ACK debugging.
+			{
+				struct TxPunch * frontPunch = TxPunchQueue_peekPtr(&outgoingTxPunchQueue);
+				bool serialMatch = (punch.payloadLength >= 4
+					&& memcmp(punch.payload, (const void *)I2CSlave_serialNumber, 4) == 0);
+				bool chanMatch = (frontPunch != NULL
+					&& frontPunch->lastSentChannel == punch.channel);
+				char msg[120];
+				sprintf(msg,
+					"len=%u ch=%u b=%02X%02X%02X%02X ser=%d chan=%d front=%u",
+					(unsigned)punch.payloadLength, (unsigned)punch.channel,
+					(unsigned)punch.payload[0], (unsigned)punch.payload[1],
+					(unsigned)punch.payload[2], (unsigned)punch.payload[3],
+					serialMatch ? 1 : 0, chanMatch ? 1 : 0,
+					(frontPunch != NULL) ? (unsigned)frontPunch->lastSentChannel : 0);
+				ErrorLog_log("ReadMessage", msg);
+			}
+
 			// Check if this is an ACK addressed to us
 			// ACK format: length 14, destination = our serial number
-			if (punch.payloadLength == 14
+			if (punch.payloadLength == 13
 				&& memcmp(punch.payload, (const void *)I2CSlave_serialNumber, 4) == 0)
 			{
 				// Only pop if this ACK matches the front punch's last TX channel
@@ -457,6 +483,7 @@ static bool ReadMessage(SPI_HandleTypeDef* phspi, struct PortAndPin * chipSelect
 				{
 					TxPunchQueue_pop(&outgoingTxPunchQueue);
 					txLastAckedChannel = chipSelectPortPin->Channel;
+					txMessagesAcked++;
 				}
 				// don't enqueue ACKs, don't send ACK reply back
 				return false;
@@ -523,7 +550,7 @@ static void SendAckReply_RedChannel()
 
 
 	uint8_t replyLength = GetPunchReplyIncludingSpaceForCommandByte(punch, PunchReply);
-	if (!CC2500_WriteTXFifo(&hspi1, &RedChannelChipSelectPortPin, PunchReply, replyLength))
+	if (!CC2500_WriteTXFifo(&hspi1, &RedChannelChipSelectPortPin, PunchReply, replyLength - 1))
 	{
 		ErrorLog_log("SendAckReply_RedChannel", "WriteTXFifo failed");
 		ResumeRX_RedChannel();
@@ -558,7 +585,7 @@ static void SendAckReply_BlueChannel()
 
 
 	uint8_t replyLength = GetPunchReplyIncludingSpaceForCommandByte(punch, PunchReply);
-	if (!CC2500_WriteTXFifo(&hspi2, &BlueChannelChipSelectPortPin, PunchReply, replyLength))
+	if (!CC2500_WriteTXFifo(&hspi2, &BlueChannelChipSelectPortPin, PunchReply, replyLength - 1))
 	{
 		ErrorLog_log("SendAckReply_BlueChannel", "WriteTXFifo failed");
 		ResumeRX_BlueChannel();
@@ -765,6 +792,16 @@ void ProcessOutgoingPunches(void)
 
 	if (success)
 	{
+		txMessagesSent++;
+#ifdef TEST_MODES_ENABLED
+		if (!mode3SendLogged && IsTestModeEnabled() && GetTestMode() == TEST_MODE_TX_NORMAL_5S)
+		{
+			char msg[40];
+			sprintf(msg, "mode 3 punch sent on ch %u", (unsigned)channel);
+			ErrorLog_log("ProcessOutgoingPunches", msg);
+			mode3SendLogged = true;
+		}
+#endif
 		txPunch->retryCount++;
 		txPunch->lastSentChannel = channel;
 
@@ -842,7 +879,8 @@ static AALoopState_t aaLoopState = AA_LOOP_STATE_TX_ACTIVE;
 static uint32_t      aaLoopDelayEndTick = 0;
 
 // Test mode 3 state. The punch is built once in StartNormalPeriodic() and
-// re-enqueued (by value) every TEST_MODE3_INTERVAL_MS in MaintainNormalPeriodic().
+// re-enqueued (by value) every (GetTestMode3DelayTenths() * 100) ms in
+// MaintainNormalPeriodic().
 static struct TxPunch testMode3Punch;
 static uint32_t periodicNextSendTick = 0;
 
@@ -1071,6 +1109,8 @@ static void StartNormalPeriodic(void)
 
 	// Send the first punch as soon as the main loop reaches ProcessTestModes().
 	periodicNextSendTick = 0;
+
+	ErrorLog_log("StartNormalPeriodic", "test mode 3 start");
 }
 
 static void MaintainNormalPeriodic(void)
@@ -1081,6 +1121,7 @@ static void MaintainNormalPeriodic(void)
 	}
 
 	static uint16_t testMode3PunchSequenceNumber = 0;
+	static bool firstPunchLogged = false;
 
 	// Reset per-punch state and enqueue a fresh copy for the normal send path.
 	testMode3Punch.retryCount = 0;
@@ -1095,8 +1136,13 @@ static void MaintainNormalPeriodic(void)
 	{
 		ErrorLog_log("MaintainNormalPeriodic", "TX queue full");
 	}
+	else if (!firstPunchLogged)
+	{
+		ErrorLog_log("MaintainNormalPeriodic", "first punch enqueued");
+		firstPunchLogged = true;
+	}
 	testMode3PunchSequenceNumber++;
-	periodicNextSendTick = HAL_GetTick() + TEST_MODE3_INTERVAL_MS;
+	periodicNextSendTick = HAL_GetTick() + ((uint32_t)GetTestMode3DelayTenths() * 100U);
 }
 
 void ProcessTestModes(void)
@@ -1130,6 +1176,18 @@ void ProcessTestModes(void)
 
 		if (restartNeeded)
 		{
+			// Coming out of a test-signal mode (1 or 2) into the periodic normal
+			// punch mode (3): the radios are still configured for carrier/0xAA
+			// (GDO0 = PA_PD, txInProgress set, EXTI disabled). Flag a config
+			// change so the main loop's ReconfigureCC2500() restores normal RX
+			// and clears txInProgress before the first periodic punch is sent.
+			if (testModeActive
+			    && (activeMode == TEST_MODE_TX_CARRIER || activeMode == TEST_MODE_TX_AA_LOOP)
+			    && mode == TEST_MODE_TX_NORMAL_5S)
+			{
+				SetChannelConfigurationChanged();
+			}
+
 			activeMode = mode;
 			activeChannel = channel;
 			testModeActive = true;

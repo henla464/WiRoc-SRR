@@ -39,6 +39,7 @@ extern void SetChannelConfigurationChanged(void);
 #define TEST_MODE_RX_TEST      0x04  // RX test: ignore CW, discard 0xAA, ACK normal
 
 extern uint8_t GetTestMode(void);
+extern uint8_t GetTestMode3DelayTenths(void);
 extern bool IsTestModeEnabled(void);
 // True when a test mode is actively driving the radios with a test signal
 // (carrier or 0xAA loop). Test mode 3 (periodic normal punch) keeps normal

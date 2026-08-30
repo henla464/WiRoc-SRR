@@ -87,6 +87,8 @@ volatile extern struct TxPunchQueue outgoingTxPunchQueue;
 extern volatile uint8_t txLastAckedChannel;      // channel last ACKed on (REDCHANNEL/BLUECHANNEL)
 extern volatile uint8_t txMessageSequenceNumber;  // incremented for every CC2500 transmit attempt
 extern volatile uint8_t txPunchSequenceNumber;    // incremented for each NEW punch sent (not retries)
+extern volatile uint16_t txMessagesAcked;        // punches confirmed by a received ACK (popped from queue)
+extern volatile uint16_t txMessagesSent;         // CC2500 TX attempts (messages, incl. retries), test mode 3 or normal send
 
 uint8_t TxPunchQueue_getNoOfItems(volatile struct TxPunchQueue * queue);
 bool TxPunchQueue_isFull(volatile struct TxPunchQueue * queue);

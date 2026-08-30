@@ -1,0 +1,121 @@
+sudo systemctl stop WiRocPython
+
+set test mode 3, enable both channels and test mode
+sudo i2cget 0 -f 0x20 0x07
+sudo i2cget 0 -f 0x20 0x06
+# outgoing queue count
+sudo i2cget 0 -f 0x20 0x08
+# messages sent
+sudo i2cget 0 -f 0x20 0x09
+# messages acked
+sudo i2cget 0 -f 0x20 0x0A
+# delay between test messages (tenth of seconds)
+sudo i2cget 0 -f 0x20 0x0B
+sudo i2cset 0 -f 0x20 0x0B 0x00
+
+sudo i2cset 0 -f 0x20 0x07 0x03
+sudo i2cset 0 -f 0x20 0x06 0x41
+
+# Reset SRR
+sudo systemctl stop WiRocPython
+sudo gpioset -c gpiochip0 201=0
+sudo gpioset -c gpiochip0 201=1
+
+# Set test mode carrier, enable RED channel
+sudo i2cset 0 -f 0x20 0x07 0x01
+sudo i2cset 0 -f 0x20 0x06 0x41
+
+# Set test mode carrier, enable BLUE channel
+sudo i2cset 0 -f 0x20 0x07 0x01
+sudo i2cset 0 -f 0x20 0x06 0x42
+
+# Set test mode 0xAA continous messages, enable RED channel
+sudo i2cset 0 -f 0x20 0x07 0x02
+sudo i2cset 0 -f 0x20 0x06 0x41
+
+# Set test mode 0xAA continous messages, enable BLUE channel
+sudo i2cset 0 -f 0x20 0x07 0x02
+sudo i2cset 0 -f 0x20 0x06 0x42
+
+# Set test mode 3 send punch messages, set 1 second delay, both channels
+sudo i2cset 0 -f 0x20 0x0B 0x0A
+sudo i2cset 0 -f 0x20 0x07 0x03
+sudo i2cset 0 -f 0x20 0x06 0x43
+
+# Set test mode 3 send punch messages, set 1 second delay, enable RED channel
+sudo i2cset 0 -f 0x20 0x0B 0x0A
+sudo i2cset 0 -f 0x20 0x07 0x03
+sudo i2cset 0 -f 0x20 0x06 0x41
+
+# Set test mode 3 send punch messages, set 1 second delay, enable RED channel
+sudo i2cset 0 -f 0x20 0x0B 0x0A
+sudo i2cset 0 -f 0x20 0x07 0x03
+sudo i2cset 0 -f 0x20 0x06 0x42
+
+sudo env/bin/python3 -c '
+from smbus2 import SMBus, i2c_msg
+with SMBus(0) as bus:
+    a = 0x20
+    status = bus.read_byte_data(a, 0x04)                # bit7=error pending, bit0=punch pending
+    c = bus.read_i2c_block_data(a, 0x03, 2)             # error count (uint16 LE)
+    count = c[0] | (c[1] << 8)
+    length = bus.read_byte_data(a, 0x27)                # length of last error string
+    if length:
+        w = i2c_msg.write(a, [0x47])                    # select ERRORMSG register
+        r = i2c_msg.read(a, length)                     # raw read — no 32-byte cap
+        bus.i2c_rdwr(w, r)
+        msg = bytes(r)
+    else:
+        msg = b""
+print("status=0x%02x  errors=%d  len=%d" % (status, count, length))
+print("message:", msg.decode("latin1"))
+'
+
+Watch-loop version with the same fix:
+
+watch -n1 'sudo env/bin/python3 -c "
+from smbus2 import SMBus, i2c_msg
+with SMBus(0) as bus:
+    a = 0x20
+    l = bus.read_byte_data(a, 0x27)
+    if l:
+        w = i2c_msg.write(a, [0x47]); r = i2c_msg.read(a, l); bus.i2c_rdwr(w, r)
+        m = bytes(r).decode(\"latin1\")
+    else:
+        m = \"\"
+    c = bus.read_i2c_block_data(a, 0x03, 2)
+    print(\"errors=%d len=%d | %s\" % (c[0]|(c[1]<<8), l, m))
+"'
+
+
+from smbus2 import SMBus
+bus = SMBus(0)
+dev = 0x20
+
+queue_count = bus.read_byte_data(dev, 0x08)
+mode3_sent  = bus.read_word_data(dev, 0x09)   # 2 bytes, big-endian
+acked       = bus.read_word_data(dev, 0x0A)
+
+
+ #!/usr/bin/env python3
+from smbus2 import SMBus
+
+bus = SMBus(0)
+addr = 0x20
+
+def read_error_msg():
+    n = bus.read_byte_data(addr, 0x27)          # ERRORLENGTH
+    if n == 0:
+        return ""
+    buf = bytearray()
+    idx = 0
+    while idx < n:
+        bus.write_byte_data(addr, 0x05, idx)    # SETDATAINDEX
+        chunk = min(n - idx, 31)                # SMBus block limit
+        buf += bytearray(bus.read_i2c_block_data(addr, 0x47, chunk))  # ERRORMSG
+        idx += chunk
+    return bytes(buf).decode(errors="replace")
+
+count = bus.read_word_data(addr, 0x03)          # ERRORCOUNT (uint16, big→little handled by smb
+print("log count:", count)
+print("last:", read_error_msg())

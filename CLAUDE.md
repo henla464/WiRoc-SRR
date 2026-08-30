@@ -18,10 +18,12 @@ TOOLS="/opt/st/stm32cubeide_1.14.0/plugins/com.st.stm32cube.ide.mcu.externaltool
 PATH="$TOOLS:$PATH"
 
 # Debug build (-O0 -g3 -DDEBUG)
-make -j$(nproc) -C Debug
+# NOTE: the generated Makefile's default goal is `clean` (the first target it
+# defines), so the `all` target must be passed explicitly.
+make -j$(nproc) -C Debug all
 
 # Release build (-Os, no debug, -DNDEBUG)
-make -j$(nproc) -C Release
+make -j$(nproc) -C Release all
 ```
 
 ### VS Code
@@ -133,14 +135,54 @@ Both are in the upper end of the 2.4 GHz ISM band.
 | 0x03    | ERRORCOUNT       | R   | Error count (uint16)                               |
 | 0x04    | STATUS           | R   | bit7=errors, bit0=punches available                |
 | 0x05    | SETDATAINDEX     | R/W | Index into block data registers                    |
-| 0x06    | FEATURES_ENABLE  | R/W | Enabled/disable bits for red/blue/UART/listen/send |
+| 0x06    | FEATURES_ENABLE  | R/W | Enabled/disable bits; bit6 = test mode enable/disable |
+| 0x07    | TESTMODE         | R/W | Which EU RED / EN 300 328 test mode to run (see below) |
 | 0x20    | PUNCHLENGTH      | R   | Length of next punch to read                       |
 | 0x27    | ERRORLENGTH      | R   | Length of next error message                       |
 | 0x40    | PUNCHDATA        | R/W | Read incoming punch / write outgoing punch         |
 | 0x47    | ERRORMSG         | R   | Error message text                                 |
 
 Feature bits: bit0=RED, bit1=BLUE, bit2=UART errors, bit3=RED listen-only,
-bit4=BLUE listen-only, bit5=Send mode
+bit4=BLUE listen-only, bit5=Send mode, bit6=test mode enable/disable (runtime).
+In the read-only `HARDWAREFEATURES (0x01)` register, bit6 instead reports "EU RED
+test modes available" and is set only when `TEST_MODES_ENABLED` is defined.
+
+## Test modes (EU RED / EN 300 328)
+
+Test mode is enabled/disabled by bit 6 of `FEATURES_ENABLE (0x06)`. While
+enabled, register `TESTMODE (0x07)` selects which test mode to run; clearing the
+enable bit returns the radio to normal operation. Test-mode values are defined
+in `I2CSlave.h` (`TEST_MODE_*`); implemented in `Radio.c` (`ProcessTestModes()`).
+
+Test modes are a **compile-time option** controlled by `TEST_MODES_ENABLED` in
+`main.h`. When that define is commented out, all test-mode code (I2C register
+0x07 handling, the `ProcessTestModes()` state machine, the 0xAA carrier/packet
+generators) is excluded from the build, and bit 6 of `HARDWAREFEATURES (0x01)`
+is cleared so a host can detect that test modes are unavailable.
+
+| Value | Name               | Behavior                                                        |
+| ----- | ------------------ | --------------------------------------------------------------- |
+| 0x01  | `TEST_MODE_TX_CARRIER`   | Continuous unmodulated carrier (MSK, no sync, infinite-length packet of `0xFF`) |
+| 0x02  | `TEST_MODE_TX_AA_LOOP`   | Continuous loop of 0xAA-filled long packets                     |
+| 0x03  | `TEST_MODE_TX_NORMAL_5S` | Normal punch packet every ~5 s (first enabled channel)          |
+| 0x04  | `TEST_MODE_RX_TEST`      | RX test: ignore CW, discard 0xAA packets, ACK normal packets    |
+
+Notes:
+
+- TX test modes (`0x01`–`0x03`) transmit on the first enabled channel (Red if
+  enabled, else Blue); `GetTestTxChannel()` picks it.
+- `ProcessTestModes()` is called every main-loop iteration (woken ~1 ms by
+  SysTick) and drives a state machine that enters/exits a test mode when the
+  enable bit (`0x06` bit 6) or the selected mode (`0x07`) changes.
+- Continuous carrier (`0x01`) uses CC2500 infinite-packet-length mode
+  (`PKTCTRL0 = 0x02`, no CRC), MSK modulation, `SYNC_MODE_NONE` (no
+  preamble/sync), and constant `0xFF` data. The TX FIFO is refilled in the main
+  loop to avoid underflow.
+- While test mode is enabled (bit 6 of `0x06`), normal punch processing is
+  disabled: `ProcessOutgoingPunches()` returns early. In test mode,
+  `ReadMessage()` also fast-drops any oversized packet (payload > 30 bytes —
+  e.g. the 60-byte 0xAA test packets) before it can overflow `struct Punch`.
+- Exiting a test mode calls `ReconfigureCC2500()` to restore normal radio setup.
 
 ## Testing
 

@@ -40,6 +40,12 @@
 #define HARDWAREFEATURESENABLEDISABLEREGADDR 0x06  // Hardware feature, enabled or disable: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART, bit 3: RED channel only listen, bit 4: BLUE channel only listen, bit 5: Send mode, bit 6: Test mode enable/disable
 #define TESTMODEREGADDR 0x07  // Which test mode to run (see TEST_MODE_* in I2CSlave.h); enabled/disabled by bit 6 of HARDWAREFEATURESENABLEDISABLEREGADDR
 
+// Diagnostic registers
+#define OUTGOINGQUEUECOUNTREGADDR 0x08	  // Number of items in outgoing TX punch queue
+#define MESSAGESSENTREGADDR 0x09		  // Number of messages (TX attempts, incl retries) sent
+#define MESSAGESACKEDREGADDR 0x0A		  // Number of messages ACKed
+#define TESTMODE3DELAYREGADDR 0x0B		  // Delay between test mode 3 punches, in tenths of a second
+
 // Length registers
 #define PUNCHLENGTHREGADDR 0x20	  // Read punch message
 #define ERRORLENGTHREGADDR 0x27
@@ -68,6 +74,7 @@ uint8_t volatile I2CSlave_ReceiveIndex = 0;
 bool volatile channelConfigurationChanged = false;
 #ifdef TEST_MODES_ENABLED
 uint8_t volatile I2CSlave_testMode = TEST_MODE_TX_CARRIER; // only takes effect when test mode is enabled (bit 6 of enable/disable reg)
+uint8_t volatile I2CSlave_testMode3DelayTenths = 50; // delay between test mode 3 punches, in tenths of a second (50 = 5.0 s)
 #endif
 
 uint8_t volatile I2CSlave_previousHardwareFeaturesEnableDisable = 0x03;
@@ -124,6 +131,11 @@ bool IsTestSignalModeActive()
 uint8_t GetTestMode()
 {
 	return I2CSlave_testMode;
+}
+
+uint8_t GetTestMode3DelayTenths()
+{
+	return I2CSlave_testMode3DelayTenths;
 }
 #endif
 
@@ -209,6 +221,26 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 		case SETDATAINDEXREGADDR:
 		{
 			// No bytes to send
+			break;
+		}
+		case OUTGOINGQUEUECOUNTREGADDR:
+		{
+			// Only one byte to send
+			break;
+		}
+		case MESSAGESSENTREGADDR:
+		{
+			// Both bytes sent in addr callback
+			break;
+		}
+		case MESSAGESACKEDREGADDR:
+		{
+			// Both bytes sent in addr callback
+			break;
+		}
+		case TESTMODE3DELAYREGADDR:
+		{
+			// Only one byte to send
 			break;
 		}
 		case PUNCHLENGTHREGADDR:
@@ -359,6 +391,20 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 			}
 			break;
 		}
+		case TESTMODE3DELAYREGADDR:
+		{
+			if (I2CSlave_ReceiveIndex <= 0) {
+				I2CSlave_ReceiveIndex++;
+				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, (uint8_t *)&I2CSlave_testMode3DelayTenths, 1, I2C_FIRST_FRAME)) != HAL_OK)
+				{
+					char msg[30];
+					sprintf(msg, "TESTMODE3DELAYREGADDR:ret: %u", status);
+					ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
+					Error_Handler();
+				}
+			}
+			break;
+		}
 #endif
 		case SETDATAINDEXREGADDR:
 		{
@@ -414,7 +460,7 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 					Error_Handler();
 				}
 			}
-			if (I2CSlave_ReceiveIndex > I2CSlave_txPayloadLength)
+			else
 			{
 				// All bytes received, enqueue for CC2500 transmission
 				uint8_t length = I2CSlave_txPayloadLength;
@@ -498,6 +544,17 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 				}
 				break;
 			}
+			case TESTMODE3DELAYREGADDR:
+			{
+				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, (uint8_t *)&I2CSlave_testMode3DelayTenths, 1, I2C_LAST_FRAME)) != HAL_OK)
+				{
+					char msg[100];
+					sprintf(msg, "TESTMODE3DELAYREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_AddrCallback", msg);
+					Error_Handler();
+				}
+				break;
+			}
 #endif
 			case SERIALNOREGADDR:
 			{
@@ -556,6 +613,42 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 					sprintf(msg, "SETDATAINDEXREGADDR:ret: %u", status);
 					ErrorLog_log("HAL_I2C_AddrCallback", msg);
 					/* enable listen again? log error and return? */
+					Error_Handler();
+				}
+				break;
+			}
+			case OUTGOINGQUEUECOUNTREGADDR:
+			{
+				uint8_t queueCount = TxPunchQueue_getNoOfItems(&outgoingTxPunchQueue);
+				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &queueCount, 1, I2C_LAST_FRAME)) != HAL_OK)
+				{
+					char msg[100];
+					sprintf(msg, "OUTGOINGQUEUECOUNTREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_AddrCallback", msg);
+					Error_Handler();
+				}
+				break;
+			}
+			case MESSAGESSENTREGADDR:
+			{
+				uint16_t messagesSent = txMessagesSent;
+				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, (uint8_t*)&messagesSent, 2, I2C_LAST_FRAME)) != HAL_OK)
+				{
+					char msg[100];
+					sprintf(msg, "MESSAGESSENTREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_AddrCallback", msg);
+					Error_Handler();
+				}
+				break;
+			}
+			case MESSAGESACKEDREGADDR:
+			{
+				uint16_t acked = txMessagesAcked;
+				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, (uint8_t*)&acked, 2, I2C_LAST_FRAME)) != HAL_OK)
+				{
+					char msg[100];
+					sprintf(msg, "MESSAGESACKEDREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_AddrCallback", msg);
 					Error_Handler();
 				}
 				break;
