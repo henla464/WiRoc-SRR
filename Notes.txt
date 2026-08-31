@@ -1,20 +1,20 @@
 sudo systemctl stop WiRocPython
 
 set test mode 3, enable both channels and test mode
-sudo i2cget 0 -f 0x20 0x07
-sudo i2cget 0 -f 0x20 0x06
+sudo i2cget 0 -f -y 0x20 0x07
+sudo i2cget 0 -f -y 0x20 0x06
 # outgoing queue count
-sudo i2cget 0 -f 0x20 0x08
+sudo i2cget 0 -f -y 0x20 0x08
 # messages sent
-sudo i2cget 0 -f 0x20 0x09
+sudo i2cget 0 -f -y 0x20 0x09
 # messages acked
-sudo i2cget 0 -f 0x20 0x0A
+sudo i2cget 0 -f -y 0x20 0x0A
 # delay between test messages (tenth of seconds)
-sudo i2cget 0 -f 0x20 0x0B
-sudo i2cset 0 -f 0x20 0x0B 0x00
+sudo i2cget 0 -f -y 0x20 0x0B
+sudo i2cset 0 -f -y 0x20 0x0B 0x00
 
-sudo i2cset 0 -f 0x20 0x07 0x03
-sudo i2cset 0 -f 0x20 0x06 0x41
+# read serialno
+sudo i2ctransfer -f -y 0 w1@0x20 0x02 r4
 
 # Reset SRR
 sudo systemctl stop WiRocPython
@@ -22,35 +22,35 @@ sudo gpioset -c gpiochip0 201=0
 sudo gpioset -c gpiochip0 201=1
 
 # Set test mode carrier, enable RED channel
-sudo i2cset 0 -f 0x20 0x07 0x01
-sudo i2cset 0 -f 0x20 0x06 0x41
+sudo i2cset 0 -f -y 0x20 0x07 0x01
+sudo i2cset 0 -f -y 0x20 0x06 0x41
 
 # Set test mode carrier, enable BLUE channel
-sudo i2cset 0 -f 0x20 0x07 0x01
-sudo i2cset 0 -f 0x20 0x06 0x42
+sudo i2cset 0 -f -y 0x20 0x07 0x01
+sudo i2cset 0 -f -y 0x20 0x06 0x42
 
 # Set test mode 0xAA continous messages, enable RED channel
-sudo i2cset 0 -f 0x20 0x07 0x02
-sudo i2cset 0 -f 0x20 0x06 0x41
+sudo i2cset 0 -f -y 0x20 0x07 0x02
+sudo i2cset 0 -f -y 0x20 0x06 0x41
 
 # Set test mode 0xAA continous messages, enable BLUE channel
-sudo i2cset 0 -f 0x20 0x07 0x02
-sudo i2cset 0 -f 0x20 0x06 0x42
+sudo i2cset 0 -f -y 0x20 0x07 0x02
+sudo i2cset 0 -f -y 0x20 0x06 0x42
 
 # Set test mode 3 send punch messages, set 1 second delay, both channels
-sudo i2cset 0 -f 0x20 0x0B 0x0A
-sudo i2cset 0 -f 0x20 0x07 0x03
-sudo i2cset 0 -f 0x20 0x06 0x43
+sudo i2cset 0 -f -y 0x20 0x0B 0x0A
+sudo i2cset 0 -f -y 0x20 0x07 0x03
+sudo i2cset 0 -f -y 0x20 0x06 0x43
 
 # Set test mode 3 send punch messages, set 1 second delay, enable RED channel
-sudo i2cset 0 -f 0x20 0x0B 0x0A
-sudo i2cset 0 -f 0x20 0x07 0x03
-sudo i2cset 0 -f 0x20 0x06 0x41
+sudo i2cset 0 -f -y 0x20 0x0B 0x0A
+sudo i2cset 0 -f -y 0x20 0x07 0x03
+sudo i2cset 0 -f -y 0x20 0x06 0x41
 
 # Set test mode 3 send punch messages, set 1 second delay, enable RED channel
-sudo i2cset 0 -f 0x20 0x0B 0x0A
-sudo i2cset 0 -f 0x20 0x07 0x03
-sudo i2cset 0 -f 0x20 0x06 0x42
+sudo i2cset 0 -f -y 0x20 0x0B 0x0A
+sudo i2cset 0 -f -y 0x20 0x07 0x03
+sudo i2cset 0 -f -y 0x20 0x06 0x42
 
 sudo env/bin/python3 -c '
 from smbus2 import SMBus, i2c_msg
@@ -119,3 +119,16 @@ def read_error_msg():
 count = bus.read_word_data(addr, 0x03)          # ERRORCOUNT (uint16, big→little handled by smb
 print("log count:", count)
 print("last:", read_error_msg())
+
+
+import smbus2
+bus = smbus2.SMBus(0)
+
+# send exactly 100 test mode 3 punches
+bus.write_word_data(0x20, 0x0C, 100)
+
+# go back to unlimited
+bus.write_word_data(0x20, 0x0C, 0)
+
+# read back the configured count
+count = bus.read_word_data(0x20, 0x0C)

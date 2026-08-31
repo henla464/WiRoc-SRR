@@ -137,6 +137,12 @@ Both are in the upper end of the 2.4 GHz ISM band.
 | 0x05    | SETDATAINDEX     | R/W | Index into block data registers                    |
 | 0x06    | FEATURES_ENABLE  | R/W | Enabled/disable bits; bit6 = test mode enable/disable |
 | 0x07    | TESTMODE         | R/W | Which EU RED / EN 300 328 test mode to run (see below) |
+| 0x08    | OUTGOINGQUEUECOUNT | R | Number of items in the outgoing TX punch queue (1 byte) |
+| 0x09    | MESSAGESSENT      | R | Messages sent (CC2500 TX attempts incl. retries, all modes; uint16) |
+| 0x0A    | MESSAGESACKED     | R | Messages ACKed (popped from outgoing queue on ACK; uint16) |
+| 0x0B    | TESTMODE3DELAY    | R/W | Delay between test mode 3 punches, in tenths of a second (default 50 = 5.0 s) |
+| 0x0C    | TESTMODE3PUNCHCOUNT | R/W | Number of punches to send in test mode 3 (uint16, 0 = unlimited). Only successfully-enqueued punches count; a punch dropped because the outgoing queue was full is not counted. |
+| 0x0D    | TESTMODE3INITIALDELAY | R/W | Delay in seconds before enqueuing the first test mode 3 punch (default 0 = immediate) |
 | 0x20    | PUNCHLENGTH      | R   | Length of next punch to read                       |
 | 0x27    | ERRORLENGTH      | R   | Length of next error message                       |
 | 0x40    | PUNCHDATA        | R/W | Read incoming punch / write outgoing punch         |
@@ -164,8 +170,7 @@ is cleared so a host can detect that test modes are unavailable.
 | ----- | ------------------ | --------------------------------------------------------------- |
 | 0x01  | `TEST_MODE_TX_CARRIER`   | Continuous unmodulated carrier (MSK, no sync, infinite-length packet of `0xFF`) |
 | 0x02  | `TEST_MODE_TX_AA_LOOP`   | Continuous loop of 0xAA-filled long packets                     |
-| 0x03  | `TEST_MODE_TX_NORMAL_5S` | Normal punch packet every ~5 s (first enabled channel)          |
-| 0x04  | `TEST_MODE_RX_TEST`      | RX test: ignore CW, discard 0xAA packets, ACK normal packets    |
+| 0x03  | `TEST_MODE_TX_NORMAL_PUNCHES` | Normal punch packets on a configurable interval (first enabled channel) |
 
 Notes:
 

@@ -45,6 +45,8 @@
 #define MESSAGESSENTREGADDR 0x09		  // Number of messages (TX attempts, incl retries) sent
 #define MESSAGESACKEDREGADDR 0x0A		  // Number of messages ACKed
 #define TESTMODE3DELAYREGADDR 0x0B		  // Delay between test mode 3 punches, in tenths of a second
+#define TESTMODE3PUNCHCOUNTREGADDR 0x0C  // Number of punches to send in test mode 3 (0 = unlimited)
+#define TESTMODE3INITIALDELAYREGADDR 0x0D  // Delay in seconds before enqueuing the first test mode 3 punch
 
 // Length registers
 #define PUNCHLENGTHREGADDR 0x20	  // Read punch message
@@ -75,6 +77,8 @@ bool volatile channelConfigurationChanged = false;
 #ifdef TEST_MODES_ENABLED
 uint8_t volatile I2CSlave_testMode = TEST_MODE_TX_CARRIER; // only takes effect when test mode is enabled (bit 6 of enable/disable reg)
 uint8_t volatile I2CSlave_testMode3DelayTenths = 50; // delay between test mode 3 punches, in tenths of a second (50 = 5.0 s)
+uint16_t volatile I2CSlave_testMode3PunchCount = 0; // number of punches to send in test mode 3 (0 = unlimited)
+uint8_t volatile I2CSlave_testMode3InitialDelaySeconds = 0; // delay before the first test mode 3 punch, in seconds (0 = immediate)
 #endif
 
 uint8_t volatile I2CSlave_previousHardwareFeaturesEnableDisable = 0x03;
@@ -121,7 +125,7 @@ bool IsTestSignalModeActive()
 	// Test modes 1 (carrier) and 2 (0xAA loop) drive the radios with a test
 	// signal, so normal RX/TX must be suppressed. Test mode 3 (periodic normal
 	// punch) keeps normal radio operation, so this returns false for it.
-	return IsTestModeEnabled() && GetTestMode() != TEST_MODE_TX_NORMAL_5S;
+	return IsTestModeEnabled() && GetTestMode() != TEST_MODE_TX_NORMAL_PUNCHES;
 #else
 	return false;
 #endif
@@ -136,6 +140,16 @@ uint8_t GetTestMode()
 uint8_t GetTestMode3DelayTenths()
 {
 	return I2CSlave_testMode3DelayTenths;
+}
+
+uint8_t GetTestMode3InitialDelaySeconds()
+{
+	return I2CSlave_testMode3InitialDelaySeconds;
+}
+
+uint16_t GetTestMode3PunchCount()
+{
+	return I2CSlave_testMode3PunchCount;
 }
 #endif
 
@@ -239,6 +253,16 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 			break;
 		}
 		case TESTMODE3DELAYREGADDR:
+		{
+			// Only one byte to send
+			break;
+		}
+		case TESTMODE3PUNCHCOUNTREGADDR:
+		{
+			// Both bytes sent in addr callback
+			break;
+		}
+		case TESTMODE3INITIALDELAYREGADDR:
 		{
 			// Only one byte to send
 			break;
@@ -377,11 +401,11 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 				}
 			} else {
 				// Data byte just landed in I2CSlave_testMode. This register is
-				// documented to only ever hold TEST_MODE_* (0x01..0x04). Clamp
+				// documented to only ever hold TEST_MODE_* (0x01..0x03). Clamp
 				// anything else (e.g. a channel number such as REDCHANNEL=146
 				// written here by mistake) back to a valid mode, so a bogus value
 				// can never be read back over I2C and never reach ProcessTestModes().
-				if (I2CSlave_testMode < TEST_MODE_TX_CARRIER || I2CSlave_testMode > TEST_MODE_RX_TEST)
+				if (I2CSlave_testMode < TEST_MODE_TX_CARRIER || I2CSlave_testMode > TEST_MODE_TX_NORMAL_PUNCHES)
 				{
 					char msg[40];
 					sprintf(msg, "clamped invalid mode 0x%02X", (unsigned)I2CSlave_testMode);
@@ -399,6 +423,35 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *I2cHandle)
 				{
 					char msg[30];
 					sprintf(msg, "TESTMODE3DELAYREGADDR:ret: %u", status);
+					ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
+					Error_Handler();
+				}
+			}
+			break;
+		}
+		case TESTMODE3PUNCHCOUNTREGADDR:
+		{
+			if (I2CSlave_ReceiveIndex < 2)
+			{
+				I2CSlave_ReceiveIndex++;
+				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, ((uint8_t *)&I2CSlave_testMode3PunchCount) + (I2CSlave_ReceiveIndex - 1), 1, I2C_FIRST_FRAME)) != HAL_OK)
+				{
+					char msg[40];
+					sprintf(msg, "TESTMODE3PUNCHCOUNTREGADDR:ret: %u", status);
+					ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
+					Error_Handler();
+				}
+			}
+			break;
+		}
+		case TESTMODE3INITIALDELAYREGADDR:
+		{
+			if (I2CSlave_ReceiveIndex <= 0) {
+				I2CSlave_ReceiveIndex++;
+				if((status = HAL_I2C_Slave_Seq_Receive_IT(I2cHandle, (uint8_t *)&I2CSlave_testMode3InitialDelaySeconds, 1, I2C_FIRST_FRAME)) != HAL_OK)
+				{
+					char msg[40];
+					sprintf(msg, "TESTMODE3INITIALDELAYREGADDR:ret: %u", status);
 					ErrorLog_log("I2C_SlaveRxCpltCallback", msg);
 					Error_Handler();
 				}
@@ -550,6 +603,29 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 				{
 					char msg[100];
 					sprintf(msg, "TESTMODE3DELAYREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_AddrCallback", msg);
+					Error_Handler();
+				}
+				break;
+			}
+			case TESTMODE3PUNCHCOUNTREGADDR:
+			{
+				uint16_t punchCount = I2CSlave_testMode3PunchCount;
+				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, (uint8_t*)&punchCount, 2, I2C_LAST_FRAME)) != HAL_OK)
+				{
+					char msg[100];
+					sprintf(msg, "TESTMODE3PUNCHCOUNTREGADDR:ret: %u", status);
+					ErrorLog_log("HAL_I2C_AddrCallback", msg);
+					Error_Handler();
+				}
+				break;
+			}
+			case TESTMODE3INITIALDELAYREGADDR:
+			{
+				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, (uint8_t *)&I2CSlave_testMode3InitialDelaySeconds, 1, I2C_LAST_FRAME)) != HAL_OK)
+				{
+					char msg[100];
+					sprintf(msg, "TESTMODE3INITIALDELAYREGADDR:ret: %u", status);
 					ErrorLog_log("HAL_I2C_AddrCallback", msg);
 					Error_Handler();
 				}

@@ -50,7 +50,7 @@ static uint8_t cwFillPacket[CARRIER_FILL_BYTES + 1];
 #define AA_LOOP_INTER_PACKET_DELAY_MS 0U
 static uint8_t aaFillPacket[AA_LOOP_DATA_BYTES + 2];
 
-// Test mode 3 (TX_NORMAL_5S): enqueue a normal punch into the TX queue on an
+// Test mode 3 (TX_NORMAL_PUNCHES): enqueue a normal punch into the TX queue on an
 // interval (default 5 s, configurable via I2C TESTMODE3DELAYREGADDR in tenths
 // of a second) and let ProcessOutgoingPunches() send it through the normal path.
 #define TEST_MODE3_PAYLOAD_LENGTH TXPUNCH_MAX_PAYLOAD_SIZE
@@ -706,7 +706,7 @@ void ProcessOutgoingPunches(void)
 	// the trigger for sending.
 	bool sendGateOpen = IsInSendMode();
 #ifdef TEST_MODES_ENABLED
-	if (!sendGateOpen && IsTestModeEnabled() && GetTestMode() == TEST_MODE_TX_NORMAL_5S)
+	if (!sendGateOpen && IsTestModeEnabled() && GetTestMode() == TEST_MODE_TX_NORMAL_PUNCHES)
 	{
 		sendGateOpen = true;
 	}
@@ -794,7 +794,7 @@ void ProcessOutgoingPunches(void)
 	{
 		txMessagesSent++;
 #ifdef TEST_MODES_ENABLED
-		if (!mode3SendLogged && IsTestModeEnabled() && GetTestMode() == TEST_MODE_TX_NORMAL_5S)
+		if (!mode3SendLogged && IsTestModeEnabled() && GetTestMode() == TEST_MODE_TX_NORMAL_PUNCHES)
 		{
 			char msg[40];
 			sprintf(msg, "mode 3 punch sent on ch %u", (unsigned)channel);
@@ -883,6 +883,7 @@ static uint32_t      aaLoopDelayEndTick = 0;
 // MaintainNormalPeriodic().
 static struct TxPunch testMode3Punch;
 static uint32_t periodicNextSendTick = 0;
+static uint16_t testMode3SentCount = 0;  // successfully-enqueued test mode 3 punches this run
 
 // Test mode 1: continuous unmodulated carrier. A constant data stream into the
 // MSK modulator produces a single tone. Infinite packet length + no preamble/
@@ -1107,8 +1108,14 @@ static void StartNormalPeriodic(void)
 	testMode3Punch.lastSentChannel = 0;
 	testMode3Punch.nextRetryTick = 0;
 
-	// Send the first punch as soon as the main loop reaches ProcessTestModes().
-	periodicNextSendTick = 0;
+	// Delay the first punch by the configured initial delay (seconds); 0 = send
+	// as soon as the main loop reaches ProcessTestModes().
+	periodicNextSendTick = HAL_GetTick() + ((uint32_t)GetTestMode3InitialDelaySeconds() * 1000U);
+	testMode3SentCount = 0;
+
+	// Start each test mode 3 run with a clean count of TX attempts and ACKs.
+	txMessagesSent = 0;
+	txMessagesAcked = 0;
 
 	ErrorLog_log("StartNormalPeriodic", "test mode 3 start");
 }
@@ -1123,23 +1130,33 @@ static void MaintainNormalPeriodic(void)
 	static uint16_t testMode3PunchSequenceNumber = 0;
 	static bool firstPunchLogged = false;
 
+	uint16_t targetCount = GetTestMode3PunchCount();
+	if (targetCount != 0 && testMode3SentCount >= targetCount)
+	{
+		return;  // requested number of punches already enqueued
+	}
+
 	// Reset per-punch state and enqueue a fresh copy for the normal send path.
 	testMode3Punch.retryCount = 0;
 	testMode3Punch.lastSentChannel = 0;
 	testMode3Punch.nextRetryTick = 0;
-
 
 	testMode3Punch.payload[10] = testMode3PunchSequenceNumber % 256; // TL
 	testMode3Punch.payload[11] = testMode3PunchSequenceNumber % 256; // TSS
 	testMode3Punch.payload[14] = (testMode3PunchSequenceNumber*2) % 256; // MEM0
 	if (TxPunchQueue_enQueue(&outgoingTxPunchQueue, &testMode3Punch) == QUEUEISFULL)
 	{
+		// Punch could not be enqueued, so it will not be sent; do not count it.
 		ErrorLog_log("MaintainNormalPeriodic", "TX queue full");
 	}
-	else if (!firstPunchLogged)
+	else
 	{
-		ErrorLog_log("MaintainNormalPeriodic", "first punch enqueued");
-		firstPunchLogged = true;
+		testMode3SentCount++;
+		if (!firstPunchLogged)
+		{
+			ErrorLog_log("MaintainNormalPeriodic", "first punch enqueued");
+			firstPunchLogged = true;
+		}
 	}
 	testMode3PunchSequenceNumber++;
 	periodicNextSendTick = HAL_GetTick() + ((uint32_t)GetTestMode3DelayTenths() * 100U);
@@ -1165,7 +1182,7 @@ void ProcessTestModes(void)
 		// Mode 3 (periodic normal punch) uses the normal send path and is
 		// channel-agnostic, so it only (re)starts when the mode changes.
 		bool restartNeeded;
-		if (mode == TEST_MODE_TX_NORMAL_5S)
+		if (mode == TEST_MODE_TX_NORMAL_PUNCHES)
 		{
 			restartNeeded = (!testModeActive) || (activeMode != mode);
 		}
@@ -1183,7 +1200,7 @@ void ProcessTestModes(void)
 			// and clears txInProgress before the first periodic punch is sent.
 			if (testModeActive
 			    && (activeMode == TEST_MODE_TX_CARRIER || activeMode == TEST_MODE_TX_AA_LOOP)
-			    && mode == TEST_MODE_TX_NORMAL_5S)
+			    && mode == TEST_MODE_TX_NORMAL_PUNCHES)
 			{
 				SetChannelConfigurationChanged();
 			}
@@ -1192,7 +1209,7 @@ void ProcessTestModes(void)
 			activeChannel = channel;
 			testModeActive = true;
 
-			if (mode == TEST_MODE_TX_NORMAL_5S)
+			if (mode == TEST_MODE_TX_NORMAL_PUNCHES)
 			{
 				// No channel lock-in or radio reconfiguration required; the
 				// normal ProcessOutgoingPunches() path sends the queued punches.
@@ -1234,7 +1251,7 @@ void ProcessTestModes(void)
 			{
 				MaintainAALoop();
 			}
-			else if (mode == TEST_MODE_TX_NORMAL_5S)
+			else if (mode == TEST_MODE_TX_NORMAL_PUNCHES)
 			{
 				MaintainNormalPeriodic();
 			}

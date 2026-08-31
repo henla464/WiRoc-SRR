@@ -33,13 +33,14 @@ extern void SetChannelConfigurationChanged(void);
  * which test mode to run while enabled.
  * Only compiled in when TEST_MODES_ENABLED is defined (see main.h). When
  * disabled, the test-mode bit in HARDWAREFEATURES (0x01) reports unavailable. */
-#define TEST_MODE_TX_CARRIER   0x01  // continuous unmodulated carrier
-#define TEST_MODE_TX_AA_LOOP   0x02  // continuous loop of 0xAA-filled packets
-#define TEST_MODE_TX_NORMAL_5S 0x03  // normal punch packet every 5 seconds
-#define TEST_MODE_RX_TEST      0x04  // RX test: ignore CW, discard 0xAA, ACK normal
+#define TEST_MODE_TX_CARRIER       0x01  // continuous unmodulated carrier
+#define TEST_MODE_TX_AA_LOOP       0x02  // continuous loop of 0xAA-filled packets
+#define TEST_MODE_TX_NORMAL_PUNCHES 0x03  // normal punch packets on a configurable interval
 
 extern uint8_t GetTestMode(void);
 extern uint8_t GetTestMode3DelayTenths(void);
+extern uint8_t GetTestMode3InitialDelaySeconds(void);
+extern uint16_t GetTestMode3PunchCount(void);
 extern bool IsTestModeEnabled(void);
 // True when a test mode is actively driving the radios with a test signal
 // (carrier or 0xAA loop). Test mode 3 (periodic normal punch) keeps normal
