@@ -133,7 +133,7 @@ Both are in the upper end of the 2.4 GHz ISM band.
 | 0x01    | HARDWAREFEATURES | R   | Available hardware features bitmap                 |
 | 0x02    | SERIALNO         | R/W | 4-byte dongle serial number                        |
 | 0x03    | ERRORCOUNT       | R   | Error count (uint16)                               |
-| 0x04    | STATUS           | R   | bit7=errors, bit0=punches available                |
+| 0x04    | STATUS           | R   | bit7=errors, bit1=TX queue full (no space available), bit0=punches available |
 | 0x05    | SETDATAINDEX     | R/W | Index into block data registers                    |
 | 0x06    | FEATURES_ENABLE  | R/W | Enabled/disable bits; bit6 = test mode enable/disable |
 | 0x07    | TESTMODE         | R/W | Which EU RED / EN 300 328 test mode to run (see below) |

@@ -35,7 +35,7 @@
 // bit 6: EU RED test modes, bit 5: Send mode, bit 4: BLUE channel only listen || bit 3: RED channel only listen, bit 2: Send errors on UART, bit 1: BLUE Channel, bit 0: RED Channel
 #define SERIALNOREGADDR 0x02  // Serialno of the dongle
 #define ERRORCOUNTREGADDR 0x03  // No of errors
-#define STATUSREGADDR 0x04	  // Indicates what messages there is to fetch. bit 7: Error message, bit 0: Punch message
+#define STATUSREGADDR 0x04	  // Status bits: bit 7: Error message exists, bit 1: TX queue full (no room for more), bit 0: Punch message received/in queue
 #define SETDATAINDEXREGADDR 0x05  // Index to the block data a register
 #define HARDWAREFEATURESENABLEDISABLEREGADDR 0x06  // Hardware feature, enabled or disable: bit 0: RED Channel, bit 1: BLUE Channel, bit 2: Send errors on UART, bit 3: RED channel only listen, bit 4: BLUE channel only listen, bit 5: Send mode, bit 6: Test mode enable/disable
 #define TESTMODEREGADDR 0x07  // Which test mode to run (see TEST_MODE_* in I2CSlave.h); enabled/disabled by bit 6 of HARDWAREFEATURESENABLEDISABLEREGADDR
@@ -668,6 +668,14 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 				if (IRQLineHandler_GetErrorMessagesExist())
 				{
 					statusValToReturn |= 0x80;
+				}
+
+				// bit 1: 1 when the outgoing TX punch queue is full (no room
+				// for another punch). Matches the historical SendPunches
+				// semantics for backward compatibility.
+				if (TxPunchQueue_isFull(&outgoingTxPunchQueue))
+				{
+					statusValToReturn |= 0x02;
 				}
 
 				if ((status = HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &statusValToReturn, 1, I2C_LAST_FRAME)) != HAL_OK)
